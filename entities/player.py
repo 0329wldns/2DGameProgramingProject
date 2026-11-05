@@ -15,6 +15,7 @@ from sdl2 import (
     SDL_BUTTON_LEFT, SDL_BUTTON_RIGHT
 )
 import game_world
+import config
 from entities.shuriken import Shuriken
 
 # 플레이어 상태 머신(FSM) 상수
@@ -23,25 +24,21 @@ STATE_ROLL: int = 1
 STATE_DASH: int = 2
 STATE_BULLET_TIME: int = 3
 
-# 화면 크기 상수
-CANVAS_WIDTH = 1280
-CANVAS_HEIGHT = 720
-
 
 class Player:
     def __init__(self, x: float = 640.0, y: float = 360.0) -> None:
         self.x: float = x
         self.y: float = y
-        self.radius: float = 16.0
-        self.move_speed: float = 460.0  # 초당 460 픽셀 하이템포 이동
+        self.radius: float = config.PLAYER_RADIUS
+        self.move_speed: float = config.PLAYER_MOVE_SPEED
 
         # 플레이어 FSM 상태
         self.state: int = STATE_NORMAL
 
         # 구르기(Roll) 파라미터 (PRD 2절: 순간 가속 포지셔닝, I-Frame 없음, 쿨다운 존재)
-        self.roll_speed: float = 950.0          # 구르기 순간 고속 가속
-        self.roll_duration: float = 0.18        # 구르기 지속 시간 (초)
-        self.roll_cooldown: float = 0.35        # 구르기 재사용 대기시간 (초)
+        self.roll_speed: float = config.PLAYER_ROLL_SPEED
+        self.roll_duration: float = config.PLAYER_ROLL_DURATION
+        self.roll_cooldown: float = config.PLAYER_ROLL_COOLDOWN
         self.roll_timer: float = 0.0            # 구르기 잔여 시간 타이머
         self.roll_cooldown_timer: float = 0.0   # 쿨다운 타이머
         self.roll_dir_x: float = 1.0            # 구르기 진행 방향
@@ -49,18 +46,18 @@ class Player:
         self.last_move_dir: tuple[float, float] = (1.0, 0.0)  # 마지막 이동 방향 기록
 
         # 돌진 일섬(Dash) 파라미터 (PRD 3.3절: 관성 계승 일섬, 텔레포트 및 50% 관통 데미지)
-        self.dash_speed: float = 2400.0         # 일섬 관통 이동 속도 (px/s)
-        self.dash_distance: float = 180.0       # 관통 고정 거리 (px)
-        self.dash_duration: float = self.dash_distance / self.dash_speed  # 약 0.075초
+        self.dash_speed: float = config.PLAYER_DASH_SPEED
+        self.dash_distance: float = config.PLAYER_DASH_DISTANCE
+        self.dash_duration: float = self.dash_distance / self.dash_speed
         self.dash_timer: float = 0.0
         self.dash_dir_x: float = 1.0
         self.dash_dir_y: float = 0.0
         self.dash_base_damage: float = 0.0      # 최초 타겟에게 가해진 데미지 (관통 50% 계산 기준)
         self.dash_hit_enemies: set[int] = set() # 관통 궤적 상 이미 타격된 적 id 집합
 
-        # 탄창 자원 관리 (PRD 3.1 명세: 최대 3개)
-        self.max_ammo: int = 5
-        self.current_ammo: int = 5
+        # 탄창 자원 관리 (config.PLAYER_MAX_AMMO)
+        self.max_ammo: int = config.PLAYER_MAX_AMMO
+        self.current_ammo: int = self.max_ammo
 
         # 키보드 입력 상태 플래그
         self.key_up: bool = False
@@ -126,17 +123,17 @@ class Player:
         elif event.type == SDL_MOUSEMOTION:
             # SDL 마우스 y좌표(상단 0)를 pico2d 데카르트 좌표계(하단 0)로 반전 변환
             self.mouse_x = float(event.x)
-            self.mouse_y = float(CANVAS_HEIGHT - 1 - event.y)
+            self.mouse_y = float(config.CANVAS_HEIGHT - 1 - event.y)
         elif event.type == SDL_MOUSEBUTTONDOWN:
             if event.button == SDL_BUTTON_LEFT:
                 # 마우스 좌표 동기화 후 수리검 발사
                 self.mouse_x = float(event.x)
-                self.mouse_y = float(CANVAS_HEIGHT - 1 - event.y)
+                self.mouse_y = float(config.CANVAS_HEIGHT - 1 - event.y)
                 self.shoot_shuriken()
             elif event.button == SDL_BUTTON_RIGHT:
                 # 마우스 좌표 동기화 후 우클릭 타겟 돌진 발동 시도
                 self.mouse_x = float(event.x)
-                self.mouse_y = float(CANVAS_HEIGHT - 1 - event.y)
+                self.mouse_y = float(config.CANVAS_HEIGHT - 1 - event.y)
                 self.try_trigger_dash()
 
     def try_trigger_dash(self) -> bool:
@@ -193,7 +190,7 @@ class Player:
         if getattr(target, 'is_executable', False):
             damage = target.max_hp
         else:
-            damage = max(1, retrieved) * 40.0
+            damage = max(1, retrieved) * config.PLAYER_DASH_STACK_DAMAGE
 
         target.hp = max(0.0, target.hp - damage)
         self.dash_base_damage = damage
@@ -204,25 +201,6 @@ class Player:
         self.dash_timer = self.dash_duration
 
     def update_dash(self, dt: float) -> None:
-        """
-        # TODO(Copilot): 일섬 관통 이동 및 궤적 상 적들에게 50% 관통 데미지 적용
-        # PRD 3.3절 명세:
-        # 1. self.dash_timer -= dt
-        # 2. 관성 계승 방향(dash_dir_x, dash_dir_y)으로 dash_speed * dt 만큼 전진:
-        #    - self.x += self.dash_dir_x * self.dash_speed * dt
-        #    - self.y += self.dash_dir_y * self.dash_speed * dt
-        # 3. 화면 경계(0 + radius ~ CANVAS_WIDTH - radius, 0 + radius ~ CANVAS_HEIGHT - radius) 클램핑
-        # 4. 관통 궤적 데미지 판정:
-        #    - game_world.world[game_world.LAYER_ENEMY] 리스트 순회
-        #    - 생존 상태(enemy.hp > 0.0)이고 아직 이번 돌진에서 타격되지 않은 적(id(enemy) not in self.dash_hit_enemies)에 대해:
-        #      * 플레이어와의 거리(math.hypot)가 (self.radius + enemy.radius) 이하인지 접촉 검사
-        #      * 접촉 시 최초 타겟 데미지의 0.5배(50%)를 광역 관통 데미지로 적용:
-        #        penetrate_damage = self.dash_base_damage * 0.5
-        #        enemy.hp = max(0.0, enemy.hp - penetrate_damage)
-        #        self.dash_hit_enemies.add(id(enemy))
-        # 5. self.dash_timer <= 0.0 이 되면:
-        #    - self.state = STATE_NORMAL 상태 복귀
-        """
         prev_x = self.x
         prev_y = self.y
 
@@ -231,15 +209,15 @@ class Player:
         self.x += self.dash_dir_x * self.dash_speed * move_dt
         self.y += self.dash_dir_y * self.dash_speed * move_dt
 
-        self.x = max(self.radius, min(CANVAS_WIDTH - self.radius, self.x))
-        self.y = max(self.radius, min(CANVAS_HEIGHT - self.radius, self.y))
+        self.x = max(self.radius, min(config.CANVAS_WIDTH - self.radius, self.x))
+        self.y = max(self.radius, min(config.CANVAS_HEIGHT - self.radius, self.y))
 
         # 이번 프레임의 이동 선분 (prev_x, prev_y) -> (self.x, self.y)
         seg_dx = self.x - prev_x
         seg_dy = self.y - prev_y
         seg_len_sq = seg_dx * seg_dx + seg_dy * seg_dy
 
-        penetrate_damage = self.dash_base_damage * 0.5
+        penetrate_damage = self.dash_base_damage * config.PLAYER_DASH_PENETRATE_RATIO
         for enemy in game_world.world[game_world.LAYER_ENEMY]:
             enemy_id = id(enemy)
             if (
@@ -327,8 +305,8 @@ class Player:
         self.x += self.roll_dir_x * self.roll_speed * dt
         self.y += self.roll_dir_y * self.roll_speed * dt
 
-        self.x = max(self.radius, min(CANVAS_WIDTH - self.radius, self.x))
-        self.y = max(self.radius, min(CANVAS_HEIGHT - self.radius, self.y))
+        self.x = max(self.radius, min(config.CANVAS_WIDTH - self.radius, self.x))
+        self.y = max(self.radius, min(config.CANVAS_HEIGHT - self.radius, self.y))
 
         if self.roll_timer <= 0.0:
             self.state = STATE_NORMAL
@@ -346,8 +324,8 @@ class Player:
             self.x += dx * self.move_speed * dt
             self.y += dy * self.move_speed * dt
 
-        self.x = max(self.radius, min(CANVAS_WIDTH - self.radius, self.x))
-        self.y = max(self.radius, min(CANVAS_HEIGHT - self.radius, self.y))
+        self.x = max(self.radius, min(config.CANVAS_WIDTH - self.radius, self.x))
+        self.y = max(self.radius, min(config.CANVAS_HEIGHT - self.radius, self.y))
 
     def update(self, scaled_dt: float, unscaled_dt: float) -> None:
         """프레임 업데이트 (FSM 상태별 처리 및 쿨다운 차감)"""

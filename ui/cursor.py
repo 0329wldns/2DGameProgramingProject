@@ -8,9 +8,7 @@ cursor.py
 from typing import Any
 import pico2d
 from sdl2 import SDL_MOUSEMOTION, SDL_MOUSEBUTTONDOWN, SDL_MOUSEBUTTONUP
-
-CANVAS_WIDTH: int = 1280
-CANVAS_HEIGHT: int = 720
+import config
 
 
 class Cursor:
@@ -25,7 +23,7 @@ class Cursor:
         """마우스 이동 이벤트 수신 시 좌표를 캔버스 데카르트 좌표계로 갱신"""
         if event.type in (SDL_MOUSEMOTION, SDL_MOUSEBUTTONDOWN, SDL_MOUSEBUTTONUP):
             self.x = float(event.x)
-            self.y = float(CANVAS_HEIGHT - 1 - event.y)
+            self.y = float(config.CANVAS_HEIGHT - 1 - event.y)
 
     def update(self, scaled_dt: float, unscaled_dt: float) -> None:
         """커서 애니메이션 또는 상태 업데이트"""

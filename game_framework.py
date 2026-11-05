@@ -11,6 +11,7 @@ from sdl2 import (
     SDL_WINDOW_FULLSCREEN_DESKTOP,
     SDL_RenderSetLogicalSize
 )
+import config
 
 # 게임 루프 상태
 running: bool = True
@@ -18,16 +19,16 @@ stack: list[Any] = []
 
 # 시간 관리 (PRD 3.4절 불릿타임 지원을 위한 타임스케일)
 time_scale: float = 1.0
-target_fps: int = 120
+target_fps: int = config.TARGET_FPS
 frame_time_limit: float = 1.0 / target_fps
 
 # 가상 논리 해상도 및 전체화면 상태 (PRD 1절: 1280x720 16:9 고정)
-logical_width: int = 1280
-logical_height: int = 720
+logical_width: int = config.CANVAS_WIDTH
+logical_height: int = config.CANVAS_HEIGHT
 is_fullscreen: bool = False
 
 
-def init_display_scaling(width: int = 1280, height: int = 720) -> None:
+def init_display_scaling(width: int = config.CANVAS_WIDTH, height: int = config.CANVAS_HEIGHT) -> None:
     """
     가상 논리 해상도를 설정하여 모니터 해상도(노트북, FHD, QHD, 4K 등)와 무관하게
     화면 비율(16:9)을 유지하며 GPU 하드웨어 자동 스케일링 및 마우스 좌표 역보정을 적용합니다.

@@ -5,15 +5,13 @@ MARK STRIKE 게임 루프 진입점.
 """
 
 import pico2d
+import config
 import game_framework
 from scenes import play_scene
 
-CANVAS_WIDTH = 1280
-CANVAS_HEIGHT = 720
-
 
 def main() -> None:
-    pico2d.open_canvas(CANVAS_WIDTH, CANVAS_HEIGHT)
+    pico2d.open_canvas(config.CANVAS_WIDTH, config.CANVAS_HEIGHT)
     try:
         game_framework.run(play_scene)
     finally:
@@ -22,4 +20,3 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
-

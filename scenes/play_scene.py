@@ -48,6 +48,12 @@ def init() -> None:
     enemies.append(enemy)
     game_world.add_object(enemy, game_world.LAYER_ENEMY)
 
+    """사용자가 임의로 추가한 블록"""
+    enemy2 = Enemy(x=1000.0, y=360.0, dir_x=-1.0, dir_y=0.0, target=player)
+    enemies.append(enemy2)
+    game_world.add_object(enemy2, game_world.LAYER_ENEMY)
+    """사용자가 임의로 추가한 블록"""
+
 
 def finish() -> None:
     """씬 종료: 리소스 해제 및 객체 정리"""

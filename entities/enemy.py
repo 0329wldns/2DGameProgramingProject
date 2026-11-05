@@ -9,6 +9,7 @@ import math
 from typing import Any
 import pico2d
 import game_world
+import config
 from entities.shuriken import STATE_FLYING, STATE_EMBEDDED
 
 
@@ -23,12 +24,12 @@ class Enemy:
     ) -> None:
         self.x: float = x
         self.y: float = y
-        self.radius: float = 20.0
+        self.radius: float = config.ENEMY_BASE_RADIUS
 
         # 체력 및 피격 데미지 설정
-        self.max_hp: float = 100.0
-        self.hp: float = 100.0
-        self.shuriken_hit_damage: float = 10.0
+        self.max_hp: float = config.ENEMY_BASE_MAX_HP
+        self.hp: float = self.max_hp
+        self.shuriken_hit_damage: float = config.SHURIKEN_HIT_DAMAGE
 
         # 시선 단위 벡터 F = (dir_x, dir_y) 정규화 초기화
         length = math.hypot(dir_x, dir_y)
@@ -39,8 +40,8 @@ class Enemy:
             self.dir_x = -1.0
             self.dir_y = 0.0
 
-        # 회전 속도 제한 (rad/s) - PRD 4절: 반사 수리검이 배후를 노릴 수 있도록 딜레이 부여
-        self.turn_rate: float = 2.0
+        # 회전 속도 제한 (rad/s)
+        self.turn_rate: float = config.ENEMY_BASE_TURN_RATE
         self.target: Any = target
 
         # 스택 및 처형 상태 (PRD 3.2절)

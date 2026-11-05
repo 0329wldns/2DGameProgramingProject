@@ -8,15 +8,12 @@ import math
 from typing import Any
 import pico2d
 import game_world
+import config
 
 # 수리검 상태 상수
 STATE_FLYING: int = 0
 STATE_RETURNING: int = 1
 STATE_EMBEDDED: int = 2
-
-# 화면 크기 상수
-CANVAS_WIDTH = 1280
-CANVAS_HEIGHT = 720
 
 
 class Shuriken:
@@ -27,39 +24,27 @@ class Shuriken:
         self.dir_y: float = dir_y
         self.owner: Any = owner
 
-        self.radius: float = 8.0
-        self.speed: float = 1300.0         # 비행 속도 (px/s) - 하이템포 튜닝
-        self.return_speed: float = 1600.0  # 플레이어 복귀 추적 속도 (px/s)
+        self.radius: float = config.SHURIKEN_RADIUS
+        self.speed: float = config.SHURIKEN_FLY_SPEED
+        self.return_speed: float = config.SHURIKEN_RETURN_SPEED
 
         self.bounce_count: int = 0
-        self.max_bounce: int = 3           # 최대 반사 횟수 (PRD 3.1)
+        self.max_bounce: int = config.SHURIKEN_MAX_BOUNCE
         self.state: int = STATE_FLYING
 
     def update_flying(self, dt: float) -> None:
-        """
-        # TODO(Copilot): 비행 이동 및 외벽 반사 물리 구현
-        # PRD 3.1절 명세:
-        # 1. dir_x, dir_y 방향으로 self.speed * dt 만큼 self.x, self.y 전진
-        # 2. 4면 외벽 충돌 검사 (반경 self.radius 고려):
-        #    - 좌측 벽 (x - radius <= 0) or 우측 벽 (x + radius >= CANVAS_WIDTH):
-        #        dir_x 반전 (-dir_x), 위치를 경계 내부로 보정, bounce_count += 1
-        #    - 하단 벽 (y - radius <= 0) or 상단 벽 (y + radius >= CANVAS_HEIGHT):
-        #        dir_y 반전 (-dir_y), 위치를 경계 내부로 보정, bounce_count += 1
-        # 3. bounce_count >= self.max_bounce 도달 시:
-        #    - self.state = STATE_RETURNING 전이
-        """
         # 기본 전진
         self.x += self.dir_x * self.speed * dt
         self.y += self.dir_y * self.speed * dt
 
-        # 외벽 충돌 및 반사 처리 (Copilot 구현 영역)
+        # 외벽 충돌 및 반사 처리
         hit_wall = False
         if self.x - self.radius <= 0:
             self.x = self.radius
             self.dir_x = -self.dir_x
             hit_wall = True
-        elif self.x + self.radius >= CANVAS_WIDTH:
-            self.x = CANVAS_WIDTH - self.radius
+        elif self.x + self.radius >= config.CANVAS_WIDTH:
+            self.x = config.CANVAS_WIDTH - self.radius
             self.dir_x = -self.dir_x
             hit_wall = True
 
@@ -67,8 +52,8 @@ class Shuriken:
             self.y = self.radius
             self.dir_y = -self.dir_y
             hit_wall = True
-        elif self.y + self.radius >= CANVAS_HEIGHT:
-            self.y = CANVAS_HEIGHT - self.radius
+        elif self.y + self.radius >= config.CANVAS_HEIGHT:
+            self.y = config.CANVAS_HEIGHT - self.radius
             self.dir_y = -self.dir_y
             hit_wall = True
 
