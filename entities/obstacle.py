@@ -99,7 +99,43 @@ class Obstacle:
         #        shuriken.state = STATE_RETURNING 전이
         # 6. 충돌 성공 시 True 반환
         """
-        pass
+        if shuriken.state != STATE_FLYING:
+            return False
+
+        closest_x = max(self.left, min(shuriken.x, self.right))
+        closest_y = max(self.bottom, min(shuriken.y, self.top))
+        distance_x = shuriken.x - closest_x
+        distance_y = shuriken.y - closest_y
+
+        if math.hypot(distance_x, distance_y) > shuriken.radius:
+            return False
+
+        penetrations = (
+            (shuriken.x + shuriken.radius - self.left, (-1.0, 0.0)),
+            (self.right - shuriken.x + shuriken.radius, (1.0, 0.0)),
+            (shuriken.y + shuriken.radius - self.bottom, (0.0, -1.0)),
+            (self.top - shuriken.y + shuriken.radius, (0.0, 1.0)),
+        )
+        _, (nx, ny) = min(penetrations, key=lambda item: item[0])
+
+        if nx < 0.0:
+            shuriken.x = self.left - shuriken.radius
+        elif nx > 0.0:
+            shuriken.x = self.right + shuriken.radius
+        elif ny < 0.0:
+            shuriken.y = self.bottom - shuriken.radius
+        else:
+            shuriken.y = self.top + shuriken.radius
+
+        dot = shuriken.dir_x * nx + shuriken.dir_y * ny
+        shuriken.dir_x -= 2 * dot * nx
+        shuriken.dir_y -= 2 * dot * ny
+
+        shuriken.bounce_count += 1
+        if shuriken.bounce_count >= shuriken.max_bounce:
+            shuriken.state = STATE_RETURNING
+
+        return True
 
     def draw(self) -> None:
         """기둥 렌더링 (아레나 내 사각 기둥)"""
