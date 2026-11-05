@@ -66,14 +66,19 @@ def handle_events() -> None:
     for event in events:
         if event.type == SDL_QUIT:
             game_framework.quit()
-        elif event.type == SDL_KEYDOWN:
+            continue
+
+        if event.type == SDL_KEYDOWN:
             if event.key == SDLK_ESCAPE:
                 game_framework.quit()
+                continue
             elif event.key == SDLK_F11:
                 game_framework.toggle_fullscreen()
-        else:
-            if player:
-                player.handle_event(event)
+                continue
+
+        # 시스템 단에서 가로채지 않은 모든 이벤트(WASD, SPACE, 마우스 등)는 플레이어에게 전달
+        if player:
+            player.handle_event(event)
 
 
 def update(scaled_dt: float, unscaled_dt: float) -> None:
