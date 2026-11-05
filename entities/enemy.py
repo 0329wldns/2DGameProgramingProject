@@ -184,6 +184,7 @@ class Enemy:
 
         # 4. 일반 스택 표시 (누적된 stack_count 개수에 맞춘 동적 중앙 정렬)
         if self.stack_count > 0:
+            stack_y = bar_bottom + bar_h + 6.0
             stack_spacing = 9.0
             stack_span = (self.stack_count - 1) * stack_spacing
             stack_start_x = self.x - stack_span / 2.0
