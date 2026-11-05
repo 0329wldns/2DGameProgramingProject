@@ -223,12 +223,21 @@ class Player:
         # 5. self.dash_timer <= 0.0 이 되면:
         #    - self.state = STATE_NORMAL 상태 복귀
         """
+        prev_x = self.x
+        prev_y = self.y
+
+        move_dt = min(dt, max(0.0, self.dash_timer))
         self.dash_timer -= dt
-        self.x += self.dash_dir_x * self.dash_speed * dt
-        self.y += self.dash_dir_y * self.dash_speed * dt
+        self.x += self.dash_dir_x * self.dash_speed * move_dt
+        self.y += self.dash_dir_y * self.dash_speed * move_dt
 
         self.x = max(self.radius, min(CANVAS_WIDTH - self.radius, self.x))
         self.y = max(self.radius, min(CANVAS_HEIGHT - self.radius, self.y))
+
+        # 이번 프레임의 이동 선분 (prev_x, prev_y) -> (self.x, self.y)
+        seg_dx = self.x - prev_x
+        seg_dy = self.y - prev_y
+        seg_len_sq = seg_dx * seg_dx + seg_dy * seg_dy
 
         penetrate_damage = self.dash_base_damage * 0.5
         for enemy in game_world.world[game_world.LAYER_ENEMY]:
@@ -239,8 +248,18 @@ class Player:
             ):
                 continue
 
-            distance = math.hypot(enemy.x - self.x, enemy.y - self.y)
-            if distance <= self.radius + enemy.radius:
+            # 선분 vs 원 최단 거리 계산 (터널링 방지 궤적 판정)
+            hit_dist = self.radius + enemy.radius
+            if seg_len_sq > 0.0:
+                t = ((enemy.x - prev_x) * seg_dx + (enemy.y - prev_y) * seg_dy) / seg_len_sq
+                t_clamped = max(0.0, min(1.0, t))
+                closest_x = prev_x + t_clamped * seg_dx
+                closest_y = prev_y + t_clamped * seg_dy
+                dist = math.hypot(enemy.x - closest_x, enemy.y - closest_y)
+            else:
+                dist = math.hypot(enemy.x - self.x, enemy.y - self.y)
+
+            if dist <= hit_dist:
                 enemy.hp = max(0.0, enemy.hp - penetrate_damage)
                 self.dash_hit_enemies.add(enemy_id)
 
