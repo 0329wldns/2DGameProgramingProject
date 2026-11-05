@@ -5,7 +5,7 @@ play_scene.py
 
 from typing import Any
 import pico2d
-from sdl2 import SDL_QUIT, SDL_KEYDOWN, SDLK_ESCAPE
+from sdl2 import SDL_QUIT, SDL_KEYDOWN, SDLK_ESCAPE, SDLK_F11
 import game_framework
 import game_world
 from entities.player import Player
@@ -60,14 +60,17 @@ def resume() -> None:
 
 
 def handle_events() -> None:
-    """사용자 입력 이벤트 처리 (ESC 키 및 플레이어 입력 전달)"""
+    """사용자 입력 이벤트 처리 (ESC 키, F11 전체화면 토글 및 플레이어 입력 전달)"""
     global player
     events = pico2d.get_events()
     for event in events:
         if event.type == SDL_QUIT:
             game_framework.quit()
-        elif event.type == SDL_KEYDOWN and event.key == SDLK_ESCAPE:
-            game_framework.quit()
+        elif event.type == SDL_KEYDOWN:
+            if event.key == SDLK_ESCAPE:
+                game_framework.quit()
+            elif event.key == SDLK_F11:
+                game_framework.toggle_fullscreen()
         else:
             if player:
                 player.handle_event(event)
