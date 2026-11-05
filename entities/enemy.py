@@ -124,7 +124,22 @@ class Enemy:
         #    - self.attach_shuriken(shuriken) 호출하여 STATE_EMBEDDED 전환 및 적에게 귀속
         # 6. 충돌 처리 완료 후 True 반환
         """
-        pass
+        if shuriken.state != STATE_FLYING or self.hp <= 0.0:
+            return False
+
+        distance = math.hypot(shuriken.x - self.x, shuriken.y - self.y)
+        if distance > self.radius + shuriken.radius:
+            return False
+
+        dot = self.dir_x * shuriken.dir_x + self.dir_y * shuriken.dir_y
+        if dot > 0.0:
+            self.is_executable = True
+        else:
+            self.stack_count += 1
+
+        self.hp = max(0.0, self.hp - self.shuriken_hit_damage)
+        self.attach_shuriken(shuriken)
+        return True
 
     def update(self, scaled_dt: float, unscaled_dt: float) -> None:
         """적 상태 업데이트 (시선 회전 및 귀속된 수리검 위치 동기화)"""
