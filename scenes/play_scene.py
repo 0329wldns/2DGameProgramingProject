@@ -13,16 +13,19 @@ from entities.obstacle import Obstacle
 from entities.shuriken import Shuriken
 from entities.enemy import Enemy
 from ui.cursor import Cursor
+from ui.trajectory import TrajectoryGuide
+import config
 
 player: Player | None = None
 cursor: Cursor | None = None
+trajectory_guide: TrajectoryGuide | None = None
 obstacles: list[Obstacle] = []
 enemies: list[Enemy] = []
 
 
 def init() -> None:
     """씬 초기화: 리소스 로드 및 초기 월드 세팅"""
-    global player, cursor, obstacles, enemies
+    global player, cursor, trajectory_guide, obstacles, enemies
     game_world.clear()
     obstacles.clear()
     enemies.clear()
@@ -33,6 +36,9 @@ def init() -> None:
     # 인게임 커스텀 조준선 생성 (UI 레이어 등록)
     cursor = Cursor(x=640.0, y=360.0)
     game_world.add_object(cursor, game_world.LAYER_UI)
+
+    # 수리검 투척 및 반사 궤적 가이드 생성
+    trajectory_guide = TrajectoryGuide(max_bounces=config.SHURIKEN_MAX_BOUNCE)
 
     # 플레이어 생성 (화면 좌측 중앙 부근 스폰)
     player = Player(x=250.0, y=360.0)
@@ -57,13 +63,14 @@ def init() -> None:
 
 def finish() -> None:
     """씬 종료: 리소스 해제 및 객체 정리"""
-    global player, cursor, obstacles, enemies
+    global player, cursor, trajectory_guide, obstacles, enemies
     pico2d.show_cursor()
     game_world.clear()
     obstacles.clear()
     enemies.clear()
     player = None
     cursor = None
+    trajectory_guide = None
 
 
 def pause() -> None:
@@ -137,6 +144,12 @@ def update(scaled_dt: float, unscaled_dt: float) -> None:
 def draw() -> None:
     """씬 렌더링"""
     pico2d.clear_canvas()
+
+    # 1. 수리검 투척 및 반사 예상 궤적 가이드 렌더링 (바닥에 점선 표시)
+    if trajectory_guide and player:
+        trajectory_guide.render(player, obstacles)
+
+    # 2. 게임 월드 객체 렌더링 (장애물, 플레이어, 적, 수리검, UI)
     game_world.render()
     pico2d.update_canvas()
 
