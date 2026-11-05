@@ -32,7 +32,7 @@
        """
        # TODO(Copilot): 입사각과 법선 벡터를 이용한 반사 벡터 계산
        # 공식: V_reflect = V_in - 2 * (V_in · n) * n
-       # 요구사항: mark_strike_prd.md 3.1절 참조, 정규화 유지
+       # 요구사항: PRD.md 3.1절 참조, 정규화 유지
        """
        pass
    ```
