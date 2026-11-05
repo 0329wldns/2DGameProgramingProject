@@ -9,22 +9,34 @@ from sdl2 import SDL_QUIT, SDL_KEYDOWN, SDLK_ESCAPE
 import game_framework
 import game_world
 from entities.player import Player
+from entities.obstacle import Obstacle
+from entities.shuriken import Shuriken
 
 player: Player | None = None
+obstacles: list[Obstacle] = []
 
 
 def init() -> None:
     """씬 초기화: 리소스 로드 및 초기 월드 세팅"""
-    global player
+    global player, obstacles
     game_world.clear()
-    player = Player(x=640.0, y=360.0)
+    obstacles.clear()
+
+    # 플레이어 생성 (화면 좌측 중앙 부근 스폰)
+    player = Player(x=250.0, y=360.0)
     game_world.add_object(player, game_world.LAYER_PLAYER)
+
+    # 테스트용 기둥(장애물) 생성 (PRD 6.2절 사양: 중앙 기둥 배치)
+    pillar = Obstacle(x=640.0, y=360.0, width=80.0, height=220.0)
+    obstacles.append(pillar)
+    game_world.add_object(pillar, game_world.LAYER_OBSTACLE)
 
 
 def finish() -> None:
     """씬 종료: 리소스 해제 및 객체 정리"""
-    global player
+    global player, obstacles
     game_world.clear()
+    obstacles.clear()
     player = None
 
 
@@ -53,8 +65,21 @@ def handle_events() -> None:
 
 
 def update(scaled_dt: float, unscaled_dt: float) -> None:
-    """월드 엔티티 상태 갱신"""
+    """월드 엔티티 상태 갱신 및 충돌 처리"""
+    # 1. 모든 엔티티 위치 및 상태 갱신
     game_world.update(scaled_dt, unscaled_dt)
+
+    # 2. 플레이어 vs 장애물 충돌 보정 (Sliding)
+    if player:
+        for obs in obstacles:
+            obs.resolve_player_collision(player)
+
+    # 3. 수리검 vs 장애물 반사 충돌 판정
+    shurikens = game_world.world[game_world.LAYER_PROJECTILE]
+    for obj in list(shurikens):
+        if isinstance(obj, Shuriken):
+            for obs in obstacles:
+                obs.resolve_shuriken_collision(obj)
 
 
 def draw() -> None:
