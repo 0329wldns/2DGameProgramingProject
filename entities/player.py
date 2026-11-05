@@ -223,7 +223,29 @@ class Player:
         # 5. self.dash_timer <= 0.0 이 되면:
         #    - self.state = STATE_NORMAL 상태 복귀
         """
-        pass
+        self.dash_timer -= dt
+        self.x += self.dash_dir_x * self.dash_speed * dt
+        self.y += self.dash_dir_y * self.dash_speed * dt
+
+        self.x = max(self.radius, min(CANVAS_WIDTH - self.radius, self.x))
+        self.y = max(self.radius, min(CANVAS_HEIGHT - self.radius, self.y))
+
+        penetrate_damage = self.dash_base_damage * 0.5
+        for enemy in game_world.world[game_world.LAYER_ENEMY]:
+            enemy_id = id(enemy)
+            if (
+                getattr(enemy, 'hp', 0.0) <= 0.0
+                or enemy_id in self.dash_hit_enemies
+            ):
+                continue
+
+            distance = math.hypot(enemy.x - self.x, enemy.y - self.y)
+            if distance <= self.radius + enemy.radius:
+                enemy.hp = max(0.0, enemy.hp - penetrate_damage)
+                self.dash_hit_enemies.add(enemy_id)
+
+        if self.dash_timer <= 0.0:
+            self.state = STATE_NORMAL
 
     def start_roll(self) -> None:
         """
