@@ -11,16 +11,19 @@ import game_world
 from entities.player import Player
 from entities.obstacle import Obstacle
 from entities.shuriken import Shuriken
+from entities.enemy import Enemy
 
 player: Player | None = None
 obstacles: list[Obstacle] = []
+enemies: list[Enemy] = []
 
 
 def init() -> None:
     """씬 초기화: 리소스 로드 및 초기 월드 세팅"""
-    global player, obstacles
+    global player, obstacles, enemies
     game_world.clear()
     obstacles.clear()
+    enemies.clear()
 
     # 플레이어 생성 (화면 좌측 중앙 부근 스폰)
     player = Player(x=250.0, y=360.0)
@@ -31,12 +34,18 @@ def init() -> None:
     obstacles.append(pillar)
     game_world.add_object(pillar, game_world.LAYER_OBSTACLE)
 
+    # 테스트용 적 생성 (PRD 6.2절 사양: 기둥 우측 배치, 초기 시선 좌측 [-1, 0])
+    enemy = Enemy(x=900.0, y=360.0, dir_x=-1.0, dir_y=0.0, target=player)
+    enemies.append(enemy)
+    game_world.add_object(enemy, game_world.LAYER_ENEMY)
+
 
 def finish() -> None:
     """씬 종료: 리소스 해제 및 객체 정리"""
-    global player, obstacles
+    global player, obstacles, enemies
     game_world.clear()
     obstacles.clear()
+    enemies.clear()
     player = None
 
 
@@ -74,12 +83,15 @@ def update(scaled_dt: float, unscaled_dt: float) -> None:
         for obs in obstacles:
             obs.resolve_player_collision(player)
 
-    # 3. 수리검 vs 장애물 반사 충돌 판정
+    # 3. 수리검 vs 장애물 반사 및 적 피격 충돌 판정
     shurikens = game_world.world[game_world.LAYER_PROJECTILE]
     for obj in list(shurikens):
         if isinstance(obj, Shuriken):
             for obs in obstacles:
                 obs.resolve_shuriken_collision(obj)
+            for enemy in enemies:
+                if enemy.resolve_shuriken_collision(obj):
+                    break
 
 
 def draw() -> None:
