@@ -139,7 +139,35 @@ class Player:
         #    - self.roll_timer = self.roll_duration
         #    - self.roll_cooldown_timer = self.roll_cooldown
         """
-        pass
+        if self.state != STATE_NORMAL or self.roll_cooldown_timer > 0.0:
+            return
+
+        dx = int(self.key_right) - int(self.key_left)
+        dy = int(self.key_up) - int(self.key_down)
+        direction_length = math.hypot(dx, dy)
+
+        if direction_length > 0.0:
+            self.roll_dir_x = dx / direction_length
+            self.roll_dir_y = dy / direction_length
+        else:
+            last_dir_x, last_dir_y = self.last_move_dir
+            last_direction_length = math.hypot(last_dir_x, last_dir_y)
+            if last_direction_length > 0.0:
+                self.roll_dir_x = last_dir_x / last_direction_length
+                self.roll_dir_y = last_dir_y / last_direction_length
+            else:
+                mouse_dir_x = self.mouse_x - self.x
+                mouse_dir_y = self.mouse_y - self.y
+                mouse_direction_length = math.hypot(mouse_dir_x, mouse_dir_y)
+                if mouse_direction_length > 0.0:
+                    self.roll_dir_x = mouse_dir_x / mouse_direction_length
+                    self.roll_dir_y = mouse_dir_y / mouse_direction_length
+                else:
+                    self.roll_dir_x, self.roll_dir_y = 1.0, 0.0
+
+        self.state = STATE_ROLL
+        self.roll_timer = self.roll_duration
+        self.roll_cooldown_timer = self.roll_cooldown
 
     def update_roll(self, dt: float) -> None:
         """
@@ -153,7 +181,15 @@ class Player:
         # 4. self.roll_timer <= 0.0 이 되면:
         #    - self.state = STATE_NORMAL 상태 복귀
         """
-        pass
+        self.roll_timer -= dt
+        self.x += self.roll_dir_x * self.roll_speed * dt
+        self.y += self.roll_dir_y * self.roll_speed * dt
+
+        self.x = max(self.radius, min(CANVAS_WIDTH - self.radius, self.x))
+        self.y = max(self.radius, min(CANVAS_HEIGHT - self.radius, self.y))
+
+        if self.roll_timer <= 0.0:
+            self.state = STATE_NORMAL
 
     def update_movement(self, dt: float) -> None:
         """8방향 등속 이동 및 대각선 벡터 정규화"""
