@@ -68,7 +68,18 @@ class Player:
         # 3. dt(델타 타임)와 move_speed를 곱하여 self.x, self.y 좌표 갱신
         # 4. 화면 경계(0 + radius ~ CANVAS_WIDTH - radius, 0 + radius ~ CANVAS_HEIGHT - radius) 이탈 방지 클램핑
         """
-        pass
+        dx = int(self.key_right) - int(self.key_left)
+        dy = int(self.key_up) - int(self.key_down)
+
+        direction_length = math.hypot(dx, dy)
+        if direction_length > 0.0:
+            dx /= direction_length
+            dy /= direction_length
+            self.x += dx * self.move_speed * dt
+            self.y += dy * self.move_speed * dt
+
+        self.x = max(self.radius, min(CANVAS_WIDTH - self.radius, self.x))
+        self.y = max(self.radius, min(CANVAS_HEIGHT - self.radius, self.y))
 
     def update(self, scaled_dt: float, unscaled_dt: float) -> None:
         """프레임 업데이트 (물리 이동은 scaled_dt 기준)"""
