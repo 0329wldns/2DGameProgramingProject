@@ -17,6 +17,12 @@ from sdl2 import (
 import game_world
 from entities.shuriken import Shuriken
 
+# 플레이어 상태 머신(FSM) 상수
+STATE_NORMAL: int = 0
+STATE_ROLL: int = 1
+STATE_DASH: int = 2
+STATE_BULLET_TIME: int = 3
+
 # 화면 크기 상수
 CANVAS_WIDTH = 1280
 CANVAS_HEIGHT = 720
@@ -28,6 +34,19 @@ class Player:
         self.y: float = y
         self.radius: float = 16.0
         self.move_speed: float = 300.0  # 초당 300 픽셀 이동
+
+        # 플레이어 FSM 상태
+        self.state: int = STATE_NORMAL
+
+        # 구르기(Roll) 파라미터 (PRD 2절: 순간 가속 포지셔닝, I-Frame 없음, 쿨다운 존재)
+        self.roll_speed: float = 650.0          # 구르기 순간 속도
+        self.roll_duration: float = 0.22        # 구르기 지속 시간 (초)
+        self.roll_cooldown: float = 0.6         # 구르기 재사용 대기시간 (초)
+        self.roll_timer: float = 0.0            # 구르기 잔여 시간 타이머
+        self.roll_cooldown_timer: float = 0.0   # 쿨다운 타이머
+        self.roll_dir_x: float = 1.0            # 구르기 진행 방향
+        self.roll_dir_y: float = 0.0
+        self.last_move_dir: tuple[float, float] = (1.0, 0.0)  # 마지막 이동 방향 기록
 
         # 탄창 자원 관리 (PRD 3.1 명세: 최대 3개)
         self.max_ammo: int = 3
@@ -83,6 +102,8 @@ class Player:
                 self.key_left = True
             elif event.key == SDLK_d:
                 self.key_right = True
+            elif event.key == SDLK_SPACE:
+                self.start_roll()
         elif event.type == SDL_KEYUP:
             if event.key == SDLK_w:
                 self.key_up = False
@@ -103,17 +124,39 @@ class Player:
                 self.mouse_y = float(CANVAS_HEIGHT - 1 - event.y)
                 self.shoot_shuriken()
 
-    def update_movement(self, dt: float) -> None:
+    def start_roll(self) -> None:
         """
-        # TODO(Copilot): 8방향 등속 이동 및 대각선 벡터 정규화 구현
+        # TODO(Copilot): 구르기(Roll) 시작 처리
         # PRD 2절 명세:
-        # 1. 입력 플래그(key_up, key_down, key_left, key_right)를 조합하여 dx, dy 방향 벡터 계산
-        #    - W: +y, S: -y, A: -x, D: +x
-        # 2. 이동 벡터의 크기가 0보다 클 경우, 정규화(Normalize, ||v|| = 1) 필수 적용
-        #    - 대각선 이동 시에도 동일한 move_speed가 유지되어야 함
-        # 3. dt(델타 타임)와 move_speed를 곱하여 self.x, self.y 좌표 갱신
-        # 4. 화면 경계(0 + radius ~ CANVAS_WIDTH - radius, 0 + radius ~ CANVAS_HEIGHT - radius) 이탈 방지 클램핑
+        # 1. self.state == STATE_NORMAL 이고 self.roll_cooldown_timer <= 0.0 일 때만 발동
+        # 2. 구르기 방향 벡터(dx, dy) 결정:
+        #    - 현재 WASD 입력(dx = right - left, dy = up - down) 확인
+        #    - 만약 이동 키가 눌려있다면 정규화하여 self.roll_dir_x, self.roll_dir_y 설정
+        #    - 이동 키가 눌려있지 않다면(정지 상태):
+        #      self.last_move_dir 또는 마우스 방향(mouse_x - x, mouse_y - y)을 정규화하여 구르기 방향으로 설정
+        # 3. 상태 및 타이머 설정:
+        #    - self.state = STATE_ROLL
+        #    - self.roll_timer = self.roll_duration
+        #    - self.roll_cooldown_timer = self.roll_cooldown
         """
+        pass
+
+    def update_roll(self, dt: float) -> None:
+        """
+        # TODO(Copilot): 구르기 물리 이동 및 상태 전이
+        # PRD 2절 명세:
+        # 1. self.roll_timer -= dt
+        # 2. 구르기 속도로 순간 가속 이동:
+        #    - self.x += self.roll_dir_x * self.roll_speed * dt
+        #    - self.y += self.roll_dir_y * self.roll_speed * dt
+        # 3. 화면 경계(CANVAS_WIDTH, CANVAS_HEIGHT) 클램핑
+        # 4. self.roll_timer <= 0.0 이 되면:
+        #    - self.state = STATE_NORMAL 상태 복귀
+        """
+        pass
+
+    def update_movement(self, dt: float) -> None:
+        """8방향 등속 이동 및 대각선 벡터 정규화"""
         dx = int(self.key_right) - int(self.key_left)
         dy = int(self.key_up) - int(self.key_down)
 
@@ -121,6 +164,7 @@ class Player:
         if direction_length > 0.0:
             dx /= direction_length
             dy /= direction_length
+            self.last_move_dir = (dx, dy)
             self.x += dx * self.move_speed * dt
             self.y += dy * self.move_speed * dt
 
@@ -128,15 +172,27 @@ class Player:
         self.y = max(self.radius, min(CANVAS_HEIGHT - self.radius, self.y))
 
     def update(self, scaled_dt: float, unscaled_dt: float) -> None:
-        """프레임 업데이트 (물리 이동은 scaled_dt 기준)"""
-        self.update_movement(scaled_dt)
+        """프레임 업데이트 (FSM 상태별 처리 및 쿨다운 차감)"""
+        # 쿨다운 타이머 갱신 (scaled_dt 기준)
+        if self.roll_cooldown_timer > 0.0:
+            self.roll_cooldown_timer = max(0.0, self.roll_cooldown_timer - scaled_dt)
+
+        # FSM 상태별 이동 처리
+        if self.state == STATE_ROLL:
+            self.update_roll(scaled_dt)
+        else:
+            self.update_movement(scaled_dt)
 
     def draw(self) -> None:
         """플레이어 임시 렌더링 (사각 히트박스 시각화 및 머리 위 탄창 표시)"""
-        left = int(self.x - self.radius)
-        bottom = int(self.y - self.radius)
-        right = int(self.x + self.radius)
-        top = int(self.y + self.radius)
+        # 구르기 상태일 때는 순간적으로 납작/축소되는 시각적 피드백 제공
+        rx = self.radius * 0.7 if self.state == STATE_ROLL else self.radius
+        ry = self.radius * 0.7 if self.state == STATE_ROLL else self.radius
+
+        left = int(self.x - rx)
+        bottom = int(self.y - ry)
+        right = int(self.x + rx)
+        top = int(self.y + ry)
         pico2d.draw_rectangle(left, bottom, right, top)
 
         # 잔여 탄창 시각화 (플레이어 머리 위에 3개 표시)
