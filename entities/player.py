@@ -48,6 +48,16 @@ class Player:
         self.roll_dir_y: float = 0.0
         self.last_move_dir: tuple[float, float] = (1.0, 0.0)  # 마지막 이동 방향 기록
 
+        # 돌진 일섬(Dash) 파라미터 (PRD 3.3절: 관성 계승 일섬, 텔레포트 및 50% 관통 데미지)
+        self.dash_speed: float = 2400.0         # 일섬 관통 이동 속도 (px/s)
+        self.dash_distance: float = 180.0       # 관통 고정 거리 (px)
+        self.dash_duration: float = self.dash_distance / self.dash_speed  # 약 0.075초
+        self.dash_timer: float = 0.0
+        self.dash_dir_x: float = 1.0
+        self.dash_dir_y: float = 0.0
+        self.dash_base_damage: float = 0.0      # 최초 타겟에게 가해진 데미지 (관통 50% 계산 기준)
+        self.dash_hit_enemies: set[int] = set() # 관통 궤적 상 이미 타격된 적 id 집합
+
         # 탄창 자원 관리 (PRD 3.1 명세: 최대 3개)
         self.max_ammo: int = 3
         self.current_ammo: int = 3
@@ -123,6 +133,97 @@ class Player:
                 self.mouse_x = float(event.x)
                 self.mouse_y = float(CANVAS_HEIGHT - 1 - event.y)
                 self.shoot_shuriken()
+            elif event.button == SDL_BUTTON_RIGHT:
+                # 마우스 좌표 동기화 후 우클릭 타겟 돌진 발동 시도
+                self.mouse_x = float(event.x)
+                self.mouse_y = float(CANVAS_HEIGHT - 1 - event.y)
+                self.try_trigger_dash()
+
+    def try_trigger_dash(self) -> bool:
+        """
+        우클릭 시 마우스 오버된 수리검 꽂힌 적(스택 보유 또는 처형 가능)을 찾아 돌진 발동
+        """
+        if self.state in (STATE_DASH, STATE_ROLL):
+            return False
+
+        enemies = game_world.world[game_world.LAYER_ENEMY]
+        for enemy in enemies:
+            if getattr(enemy, 'hp', 0.0) <= 0.0:
+                continue
+            dist = math.hypot(self.mouse_x - enemy.x, self.mouse_y - enemy.y)
+            if dist <= (enemy.radius + 18.0):
+                # 수리검이 꽂혀있거나(스택) 처형 가능 상태인지 확인
+                has_shurikens = len(getattr(enemy, 'embedded_shurikens', [])) > 0
+                is_executable = getattr(enemy, 'is_executable', False)
+                if has_shurikens or is_executable:
+                    self.start_dash(enemy)
+                    return True
+        return False
+
+    def start_dash(self, target: Any) -> None:
+        """
+        최초 돌진 (텔레포트 & 관성 계승 일섬 발동)
+        PRD 3.3절 명세:
+        1. 발동 시점의 'Player -> Target' 방향 벡터 정규화 -> 관성 방향(dash_dir) 저장
+        2. 타겟 위치로 텔레포트
+        3. 타겟의 수리검 전량 회수 (탄창 복구)
+        4. 데미지 계산 및 적용:
+           - is_executable == True: target.max_hp (100% 즉사 처형)
+           - 일반 상태: max(1, retrieved) * 40.0
+        5. dash_base_damage 기록 및 dash_hit_enemies 초기화
+        6. STATE_DASH FSM 전이
+        """
+        to_x = target.x - self.x
+        to_y = target.y - self.y
+        dist = math.hypot(to_x, to_y)
+        if dist > 0.0:
+            self.dash_dir_x = to_x / dist
+            self.dash_dir_y = to_y / dist
+        else:
+            self.dash_dir_x, self.dash_dir_y = 1.0, 0.0
+
+        # 타겟 위치로 텔레포트
+        self.x = target.x
+        self.y = target.y
+
+        # 박힌 수리검 일괄 회수
+        retrieved = target.retrieve_all_shurikens()
+
+        # 타겟 데미지 계산
+        if getattr(target, 'is_executable', False):
+            damage = target.max_hp
+        else:
+            damage = max(1, retrieved) * 40.0
+
+        target.hp = max(0.0, target.hp - damage)
+        self.dash_base_damage = damage
+        self.dash_hit_enemies = {id(target)}
+
+        # FSM 상태 전이
+        self.state = STATE_DASH
+        self.dash_timer = self.dash_duration
+
+    def update_dash(self, dt: float) -> None:
+        """
+        # TODO(Copilot): 일섬 관통 이동 및 궤적 상 적들에게 50% 관통 데미지 적용
+        # PRD 3.3절 명세:
+        # 1. self.dash_timer -= dt
+        # 2. 관성 계승 방향(dash_dir_x, dash_dir_y)으로 dash_speed * dt 만큼 전진:
+        #    - self.x += self.dash_dir_x * self.dash_speed * dt
+        #    - self.y += self.dash_dir_y * self.dash_speed * dt
+        # 3. 화면 경계(0 + radius ~ CANVAS_WIDTH - radius, 0 + radius ~ CANVAS_HEIGHT - radius) 클램핑
+        # 4. 관통 궤적 데미지 판정:
+        #    - game_world.world[game_world.LAYER_ENEMY] 리스트 순회
+        #    - 생존 상태(enemy.hp > 0.0)이고 아직 이번 돌진에서 타격되지 않은 적(id(enemy) not in self.dash_hit_enemies)에 대해:
+        #      * 플레이어와의 거리(math.hypot)가 (self.radius + enemy.radius) 이하인지 접촉 검사
+        #      * 접촉 시 최초 타겟 데미지의 0.5배(50%)를 광역 관통 데미지로 적용:
+        #        penetrate_damage = self.dash_base_damage * 0.5
+        #        enemy.hp = max(0.0, enemy.hp - penetrate_damage)
+        #        self.dash_hit_enemies.add(id(enemy))
+        # 5. self.dash_timer <= 0.0 이 되면:
+        #    - self.state = STATE_NORMAL 상태 복귀
+        """
+        pass
 
     def start_roll(self) -> None:
         """
@@ -214,13 +315,21 @@ class Player:
             self.roll_cooldown_timer = max(0.0, self.roll_cooldown_timer - scaled_dt)
 
         # FSM 상태별 이동 처리
-        if self.state == STATE_ROLL:
+        if self.state == STATE_DASH:
+            self.update_dash(scaled_dt)
+        elif self.state == STATE_ROLL:
             self.update_roll(scaled_dt)
         else:
             self.update_movement(scaled_dt)
 
     def draw(self) -> None:
-        """플레이어 임시 렌더링 (사각 히트박스 시각화 및 머리 위 탄창 표시)"""
+        """플레이어 임시 렌더링 (사각 히트박스 시각화, 일섬 궤적 및 머리 위 탄창 표시)"""
+        if self.state == STATE_DASH:
+            # 일섬 관통 궤적 연출 (관성 방향으로 길게 뻗는 선)
+            tail_x = int(self.x - self.dash_dir_x * 40.0)
+            tail_y = int(self.y - self.dash_dir_y * 40.0)
+            pico2d.draw_line(tail_x, tail_y, int(self.x), int(self.y))
+
         # 구르기 상태일 때는 순간적으로 납작/축소되는 시각적 피드백 제공
         rx = self.radius * 0.7 if self.state == STATE_ROLL else self.radius
         ry = self.radius * 0.7 if self.state == STATE_ROLL else self.radius
