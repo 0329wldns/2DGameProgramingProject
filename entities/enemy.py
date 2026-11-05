@@ -182,11 +182,14 @@ class Enemy:
         fill_right = int(bar_left + bar_w * hp_ratio)
         pico2d.draw_rectangle(bar_left, bar_bottom, fill_right, int(bar_bottom + bar_h))
 
-        # 4. 일반 스택 표시 (체력바 위 작은 사각형들)
-        stack_y = bar_bottom + bar_h + 6.0
-        for i in range(self.stack_count):
-            sx = int(self.x - 10.0 + i * 10.0)
-            pico2d.draw_rectangle(sx - 3, int(stack_y - 3), sx + 3, int(stack_y + 3))
+        # 4. 일반 스택 표시 (누적된 stack_count 개수에 맞춘 동적 중앙 정렬)
+        if self.stack_count > 0:
+            stack_spacing = 9.0
+            stack_span = (self.stack_count - 1) * stack_spacing
+            stack_start_x = self.x - stack_span / 2.0
+            for i in range(self.stack_count):
+                sx = int(stack_start_x + i * stack_spacing)
+                pico2d.draw_rectangle(sx - 2, int(stack_y - 2), sx + 2, int(stack_y + 2))
 
         # 5. 처형 가능 상태(is_executable) 다이아몬드 마커 (PRD 5.2절 명세)
         if self.is_executable:

@@ -59,8 +59,8 @@ class Player:
         self.dash_hit_enemies: set[int] = set() # 관통 궤적 상 이미 타격된 적 id 집합
 
         # 탄창 자원 관리 (PRD 3.1 명세: 최대 3개)
-        self.max_ammo: int = 3
-        self.current_ammo: int = 3
+        self.max_ammo: int = 5
+        self.current_ammo: int = 5
 
         # 키보드 입력 상태 플래그
         self.key_up: bool = False
@@ -381,10 +381,15 @@ class Player:
         top = int(self.y + ry)
         pico2d.draw_rectangle(left, bottom, right, top)
 
-        # 잔여 탄창 시각화 (플레이어 머리 위에 3개 표시)
-        start_x = self.x - 12.0
-        ammo_y = self.y + self.radius + 8.0
+        # 잔여 탄창 시각화 (self.max_ammo 개수에 맞춰 항상 플레이어 정중앙에 동적 정렬)
+        spacing = 11.0
+        total_span = (self.max_ammo - 1) * spacing if self.max_ammo > 1 else 0.0
+        start_x = self.x - total_span / 2.0
+        ammo_y = self.y + self.radius + 10.0
         for i in range(self.max_ammo):
-            bx = start_x + i * 12.0
+            bx = start_x + i * spacing
             if i < self.current_ammo:
-                pico2d.draw_rectangle(int(bx - 4), int(ammo_y - 4), int(bx + 4), int(ammo_y + 4))
+                pico2d.draw_rectangle(int(bx - 3), int(ammo_y - 3), int(bx + 3), int(ammo_y + 3))
+            else:
+                # 사용한 빈 탄창 슬롯 표시 (작은 도트)
+                pico2d.draw_rectangle(int(bx - 1), int(ammo_y - 1), int(bx + 1), int(ammo_y + 1))
