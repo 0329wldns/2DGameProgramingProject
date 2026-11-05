@@ -97,3 +97,4 @@ def run(start_scene: Any) -> None:
     while stack:
         stack[-1].finish()
         stack.pop()
+

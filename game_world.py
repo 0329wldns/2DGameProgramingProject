@@ -52,3 +52,4 @@ def render() -> None:
         for obj in layer:
             if hasattr(obj, 'draw'):
                 obj.draw()
+
