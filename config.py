@@ -50,3 +50,4 @@ ENEMY_BASE_TURN_RATE: float = 2.0       # 시선 회전 속도 제한 (rad/s)
 # ==========================================
 BULLET_TIME_SCALE: float = 0.1          # 시간 감속 배율 (10% 속도)
 BULLET_TIME_DURATION: float = 0.8       # 실제 현실 시간(Unscaled Time) 기준 지속 시간 (초)
+
