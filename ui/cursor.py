@@ -54,3 +54,4 @@ class Cursor:
         if self.is_hovering_target:
             box_r = gap + size
             pico2d.draw_rectangle(ix - box_r, iy - box_r, ix + box_r, iy + box_r)
+
