@@ -28,8 +28,8 @@ class Shuriken:
         self.owner: Any = owner
 
         self.radius: float = 8.0
-        self.speed: float = 650.0          # 비행 속도 (px/s)
-        self.return_speed: float = 850.0   # 플레이어 복귀 추적 속도 (px/s)
+        self.speed: float = 1300.0         # 비행 속도 (px/s) - 하이템포 튜닝
+        self.return_speed: float = 1600.0  # 플레이어 복귀 추적 속도 (px/s)
 
         self.bounce_count: int = 0
         self.max_bounce: int = 3           # 최대 반사 횟수 (PRD 3.1)

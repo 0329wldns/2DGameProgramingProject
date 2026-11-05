@@ -33,15 +33,15 @@ class Player:
         self.x: float = x
         self.y: float = y
         self.radius: float = 16.0
-        self.move_speed: float = 300.0  # 초당 300 픽셀 이동
+        self.move_speed: float = 460.0  # 초당 460 픽셀 하이템포 이동
 
         # 플레이어 FSM 상태
         self.state: int = STATE_NORMAL
 
         # 구르기(Roll) 파라미터 (PRD 2절: 순간 가속 포지셔닝, I-Frame 없음, 쿨다운 존재)
-        self.roll_speed: float = 650.0          # 구르기 순간 속도
-        self.roll_duration: float = 0.22        # 구르기 지속 시간 (초)
-        self.roll_cooldown: float = 0.6         # 구르기 재사용 대기시간 (초)
+        self.roll_speed: float = 950.0          # 구르기 순간 고속 가속
+        self.roll_duration: float = 0.18        # 구르기 지속 시간 (초)
+        self.roll_cooldown: float = 0.35        # 구르기 재사용 대기시간 (초)
         self.roll_timer: float = 0.0            # 구르기 잔여 시간 타이머
         self.roll_cooldown_timer: float = 0.0   # 쿨다운 타이머
         self.roll_dir_x: float = 1.0            # 구르기 진행 방향
