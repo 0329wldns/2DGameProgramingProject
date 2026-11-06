@@ -5,7 +5,7 @@ play_scene.py
 
 from typing import Any
 import pico2d
-from sdl2 import SDL_QUIT, SDL_KEYDOWN, SDLK_ESCAPE, SDLK_F11
+from sdl2 import SDL_QUIT, SDL_KEYDOWN, SDLK_ESCAPE, SDLK_F11, SDLK_F1
 import game_framework
 import game_world
 from entities.player import Player
@@ -73,6 +73,13 @@ def finish() -> None:
     trajectory_guide = None
 
 
+def restart() -> None:
+    """F1 키 입력 시 씬을 완전히 초기 상태로 리셋합니다."""
+    finish()
+    game_framework.set_time_scale(1.0)
+    init()
+
+
 def pause() -> None:
     """씬 일시정지 (서브 씬 푸시 등)"""
     pass
@@ -84,7 +91,7 @@ def resume() -> None:
 
 
 def handle_events() -> None:
-    """사용자 입력 이벤트 처리 (ESC 키, F11 전체화면 토글 및 플레이어 입력 전달)"""
+    """사용자 입력 이벤트 처리 (ESC 종료, F11 전체화면, F1 리셋 및 플레이어 입력 전달)"""
     global player, cursor
     events = pico2d.get_events()
     for event in events:
@@ -98,6 +105,9 @@ def handle_events() -> None:
                 continue
             elif event.key == SDLK_F11:
                 game_framework.toggle_fullscreen()
+                continue
+            elif event.key == SDLK_F1:
+                restart()
                 continue
 
         # 커서 위치 갱신
