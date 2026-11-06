@@ -184,3 +184,4 @@ class TrajectoryGuide:
             # 반사 지점에 작은 다이아몬드 앵커 표시
             hit_x, hit_y = int(p2[0]), int(p2[1])
             pico2d.draw_rectangle(hit_x - 2, hit_y - 2, hit_x + 2, hit_y + 2)
+

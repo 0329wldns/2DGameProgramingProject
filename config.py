@@ -7,8 +7,8 @@ MARK STRIKE 게임 전역 설정 및 밸런스 상수 모듈 (Single Source of T
 # ==========================================
 # 1. 화면 및 프레임워크 설정 (PRD 1절)
 # ==========================================
-CANVAS_WIDTH: int = 1280
-CANVAS_HEIGHT: int = 720
+CANVAS_WIDTH: int = 1920
+CANVAS_HEIGHT: int = 1080
 TARGET_FPS: int = 120
 
 # ==========================================
