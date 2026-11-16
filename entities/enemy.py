@@ -57,18 +57,27 @@ class Enemy:
 
     @property
     def is_executable_by_dash(self) -> bool:
-        """돌진(Dash)으로 일격 처치 가능한 상태(배후 처형 확정 또는 잔여 체력 <= 돌진 피해량)인지 확인"""
+        """
+        수리검 표식이 박혀 있고, 해당 스택으로 인한 돌진 피해량으로 일격 처치 가능한 상태인지 확인.
+        1. 사망했거나 체력이 0 이하인 경우 False
+        2. 배후 타격으로 처형 활성화(is_executable == True)된 경우 True
+        3. 반드시 수리검 표식이 박혀 있어야 함 (len(embedded_shurikens) > 0)
+        4. 적의 잔여 체력이 (박힌 수리검 수 * 스택당 돌진 피해량) 이하인 경우 True
+        """
         if self.is_dead or self.hp <= 0.0:
             return False
         if self.is_executable:
             return True
-        dash_damage = max(1, len(self.embedded_shurikens)) * config.PLAYER_DASH_STACK_DAMAGE
+        shuriken_count = len(self.embedded_shurikens)
+        if shuriken_count <= 0:
+            return False
+        dash_damage = shuriken_count * config.PLAYER_DASH_STACK_DAMAGE
         return self.hp <= dash_damage
 
     @property
     def is_dash_target(self) -> bool:
-        """돌진(Dash)이 가능한 상태(수리검 꽂힘 또는 처형 가능)인지 확인"""
-        return (len(self.embedded_shurikens) > 0 or self.is_executable or self.is_executable_by_dash) and not self.is_dead and self.hp > 0.0
+        """돌진(Dash)이 가능한 상태(수리검 표식이 꽂혀 있거나 배후 처형 가능 상태)인지 확인"""
+        return (len(self.embedded_shurikens) > 0 or self.is_executable) and not self.is_dead and self.hp > 0.0
 
     def update_facing(self, dt: float) -> None:
         """

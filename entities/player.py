@@ -163,9 +163,9 @@ class Player:
                 continue
             dist = math.hypot(self.mouse_x - enemy.x, self.mouse_y - enemy.y)
             if dist <= (enemy.radius + 18.0):
-                # 수리검이 꽂혀있거나(스택) 처형 가능(배후 피격 또는 돌진 일격사 체력) 상태인지 확인
+                # 수리검 표식이 꽂혀있거나 배후 처형 가능 상태인 적에게만 돌진 허용
                 has_shurikens = len(getattr(enemy, 'embedded_shurikens', [])) > 0
-                is_executable = getattr(enemy, 'is_executable_by_dash', False) or getattr(enemy, 'is_executable', False)
+                is_executable = getattr(enemy, 'is_executable', False)
                 if has_shurikens or is_executable:
                     self.start_dash(enemy)
                     return True
@@ -204,7 +204,7 @@ class Player:
         if getattr(target, 'is_executable', False):
             damage = target.max_hp
         else:
-            damage = max(1, retrieved) * config.PLAYER_DASH_STACK_DAMAGE
+            damage = retrieved * config.PLAYER_DASH_STACK_DAMAGE
 
         target.hp = max(0.0, target.hp - damage)
         self.dash_base_damage = damage
