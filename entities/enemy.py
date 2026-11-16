@@ -10,7 +10,7 @@ from typing import Any
 import pico2d
 import game_world
 import config
-from entities.shuriken import STATE_FLYING, STATE_EMBEDDED
+from entities.shuriken import STATE_FLYING, STATE_RETURNING, STATE_EMBEDDED
 
 
 class Enemy:
@@ -89,7 +89,7 @@ class Enemy:
 
     def retrieve_all_shurikens(self) -> int:
         """
-        적에게 박힌 모든 수리검을 회수하여 플레이어 탄창으로 반환하고 월드에서 제거합니다.
+        적에게 박힌 모든 수리검을 즉시 회수하여 플레이어 탄창으로 반환하고 월드에서 제거합니다.
         반환값: 회수된 수리검 개수
         """
         count = len(self.embedded_shurikens)
@@ -100,6 +100,20 @@ class Enemy:
                     shuriken.owner.current_ammo + 1,
                 )
             game_world.remove_object(shuriken)
+        self.embedded_shurikens.clear()
+        self._embedded_offsets.clear()
+        self.stack_count = 0
+        return count
+
+    def release_embedded_shurikens(self) -> int:
+        """
+        적 사망 시 박혀있던 모든 수리검의 상태를 STATE_RETURNING으로 전환하여
+        벽을 통과해 플레이어에게 날아가 자동 회수되도록 방출합니다.
+        반환값: 방출된 수리검 개수
+        """
+        count = len(self.embedded_shurikens)
+        for shuriken in self.embedded_shurikens:
+            shuriken.state = STATE_RETURNING
         self.embedded_shurikens.clear()
         self._embedded_offsets.clear()
         self.stack_count = 0
@@ -141,10 +155,13 @@ class Enemy:
             self.stack_count += 1
 
         self.hp = max(0.0, self.hp - self.shuriken_hit_damage)
+        self.attach_shuriken(shuriken)
+
+        # 적이 이번 피격으로 사망한 경우 박힌 모든 수리검을 즉시 복귀 상태로 전환하여 회수
         if self.hp <= 0.0:
             self.is_dead = True
+            self.release_embedded_shurikens()
 
-        self.attach_shuriken(shuriken)
         return True
 
     def update(self, scaled_dt: float, unscaled_dt: float) -> None:

@@ -259,6 +259,8 @@ class Player:
                 if enemy.hp <= 0.0:
                     enemy.is_dead = True
                     self.dash_killed_any = True
+                    if hasattr(enemy, 'release_embedded_shurikens'):
+                        enemy.release_embedded_shurikens()
 
         if self.dash_timer <= 0.0:
             if self.dash_killed_any:
