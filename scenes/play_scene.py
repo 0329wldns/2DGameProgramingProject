@@ -5,7 +5,7 @@ play_scene.py
 
 from typing import Any
 import pico2d
-from sdl2 import SDL_QUIT, SDL_KEYDOWN, SDLK_ESCAPE, SDLK_F11, SDLK_F1
+from sdl2 import SDL_QUIT, SDL_KEYDOWN, SDLK_ESCAPE, SDLK_F11, SDLK_F1, SDLK_F2
 import game_framework
 import game_world
 from entities.player import Player
@@ -21,6 +21,7 @@ cursor: Cursor | None = None
 trajectory_guide: TrajectoryGuide | None = None
 obstacles: list[Obstacle] = []
 enemies: list[Enemy] = []
+show_trajectory: bool = True
 
 
 def init() -> None:
@@ -111,8 +112,8 @@ def resume() -> None:
 
 
 def handle_events() -> None:
-    """사용자 입력 이벤트 처리 (ESC 종료, F11 전체화면, F1 리셋 및 플레이어 입력 전달)"""
-    global player, cursor
+    """사용자 입력 이벤트 처리 (ESC 종료, F11 전체화면, F1 리셋, F2 궤적 표시 토글 및 플레이어 입력 전달)"""
+    global player, cursor, show_trajectory
     events = pico2d.get_events()
     for event in events:
         if event.type == SDL_QUIT:
@@ -128,6 +129,9 @@ def handle_events() -> None:
                 continue
             elif event.key == SDLK_F1:
                 restart()
+                continue
+            elif event.key == SDLK_F2:
+                show_trajectory = not show_trajectory
                 continue
 
         # 커서 위치 갱신
@@ -175,8 +179,8 @@ def draw() -> None:
     """씬 렌더링"""
     pico2d.clear_canvas()
 
-    # 1. 수리검 투척 및 반사 예상 궤적 가이드 렌더링 (바닥에 점선 표시)
-    if trajectory_guide and player:
+    # 1. 수리검 투척 및 반사 예상 궤적 가이드 렌더링 (F2 키로 토글 가능)
+    if show_trajectory and trajectory_guide and player:
         trajectory_guide.render(player, obstacles)
 
     # 2. 게임 월드 객체 렌더링 (장애물, 플레이어, 적, 수리검, UI)

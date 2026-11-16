@@ -33,7 +33,7 @@ PLAYER_DASH_PENETRATE_RATIO: float = 0.5 # 관통 궤적 적들에 대한 데미
 # 3. 혼령 수리검(Shuriken) 설정 (PRD 3.1절)
 # ==========================================
 SHURIKEN_RADIUS: float = 8.0
-SHURIKEN_FLY_SPEED: float = 1300.0      # 비행 속도 (px/s)
+SHURIKEN_FLY_SPEED: float = 2000.0      # 비행 속도 (px/s)
 SHURIKEN_RETURN_SPEED: float = 1600.0   # 플레이어 추적 복귀 속도 (px/s)
 SHURIKEN_MAX_BOUNCE: int = 3            # 최대 반사 횟수 후 복귀
 SHURIKEN_HIT_DAMAGE: float = 10.0       # 수리검 기본 투사체 적중 피해
@@ -49,7 +49,7 @@ ENEMY_BASE_TURN_RATE: float = 2.0       # 시선 회전 속도 제한 (rad/s)
 # 5. 불릿타임 및 처치 리셋 설정 (PRD 3.4절)
 # ==========================================
 BULLET_TIME_SCALE: float = 0.1          # 시간 감속 배율 (10% 속도)
-BULLET_TIME_DURATION: float = 0.8       # 실제 현실 시간(Unscaled Time) 기준 지속 시간 (초)
+BULLET_TIME_DURATION: float = 1.5       # 실제 현실 시간(Unscaled Time) 기준 지속 시간 (초)
 
 # ==========================================
 # 6. 타격감 및 연출 설정 (PRD 5.2절)
