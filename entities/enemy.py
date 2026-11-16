@@ -56,9 +56,19 @@ class Enemy:
         self._embedded_offsets: list[tuple[float, float]] = []
 
     @property
+    def is_executable_by_dash(self) -> bool:
+        """돌진(Dash)으로 일격 처치 가능한 상태(배후 처형 확정 또는 잔여 체력 <= 돌진 피해량)인지 확인"""
+        if self.is_dead or self.hp <= 0.0:
+            return False
+        if self.is_executable:
+            return True
+        dash_damage = max(1, len(self.embedded_shurikens)) * config.PLAYER_DASH_STACK_DAMAGE
+        return self.hp <= dash_damage
+
+    @property
     def is_dash_target(self) -> bool:
         """돌진(Dash)이 가능한 상태(수리검 꽂힘 또는 처형 가능)인지 확인"""
-        return (len(self.embedded_shurikens) > 0 or self.is_executable) and not self.is_dead and self.hp > 0.0
+        return (len(self.embedded_shurikens) > 0 or self.is_executable or self.is_executable_by_dash) and not self.is_dead and self.hp > 0.0
 
     def update_facing(self, dt: float) -> None:
         """
@@ -188,13 +198,60 @@ class Enemy:
             shuriken.x = self.x + ox
             shuriken.y = self.y + oy
 
-    def _draw_diamond_marker(self, cx: float, cy: float, size: float) -> None:
-        """처형 가능 상태(is_executable)일 때 체력바 상단에 표시할 다이아몬드 마커 (청록색 네온)"""
-        ix, iy, isize = int(cx), int(cy), int(size)
+    def _draw_execution_marker(self, cx: float, cy: float) -> None:
+        """
+        처형 가능(일격사 확정) 상태일 때 머리 위에 표시되는 발광 처형 마커.
+        동적 맥동(Pulse), 상하 부유(Bobbing), 이중 네온 테두리, 내부 단도 슬릿 및 하단 유도 화살표(▼) 포함.
+        """
+        import time
+        t = time.time()
+        bob = math.sin(t * 6.0) * 3.5
+        pulse = 1.0 + 0.16 * math.sin(t * 8.0)
+
+        ix = int(cx)
+        iy = int(cy + bob)
+        base_size = 14.0 * pulse
+        isize = max(6, int(base_size))
+
+        # 1. 외곽 발광 다이아몬드 (이중 네온 청록 테두리)
         pico2d.draw_line(ix, iy + isize, ix + isize, iy, r=0, g=255, b=255)
         pico2d.draw_line(ix + isize, iy, ix, iy - isize, r=0, g=255, b=255)
         pico2d.draw_line(ix, iy - isize, ix - isize, iy, r=0, g=255, b=255)
         pico2d.draw_line(ix - isize, iy, ix, iy + isize, r=0, g=255, b=255)
+
+        # 2. 내부 채움 그라데이션 및 백색 코어 (Luminous Core)
+        for s in range(1, isize):
+            ratio = s / isize
+            if ratio < 0.4:
+                r, g, b = 255, 255, 255
+            else:
+                r = int(50 * (1.0 - ratio))
+                g = 255
+                b = 255
+            pico2d.draw_line(ix, iy + s, ix + s, iy, r=r, g=g, b=b)
+            pico2d.draw_line(ix + s, iy, ix, iy - s, r=r, g=g, b=b)
+            pico2d.draw_line(ix, iy - s, ix - s, iy, r=r, g=g, b=b)
+            pico2d.draw_line(ix - s, iy, ix, iy + s, r=r, g=g, b=b)
+
+        # 3. 중앙 단도 슬릿 (어두운 실루엣 크로스 슬래시)
+        slit_h = max(3, isize - 4)
+        pico2d.draw_line(ix, iy - slit_h, ix, iy + slit_h, r=15, g=30, b=45)
+        pico2d.draw_line(ix - 1, iy - slit_h + 1, ix - 1, iy + slit_h - 1, r=15, g=30, b=45)
+        pico2d.draw_line(ix - 4, iy + 1, ix + 4, iy + 1, r=15, g=30, b=45)
+
+        # 4. 하단 유도 화살표 / 셰브론 (▼) - 적 머리를 직접 가리킴
+        arrow_y = iy - isize - 3
+        pico2d.draw_line(ix - 5, arrow_y, ix, arrow_y - 5, r=0, g=255, b=255)
+        pico2d.draw_line(ix + 5, arrow_y, ix, arrow_y - 5, r=0, g=255, b=255)
+        pico2d.draw_line(ix - 5, arrow_y + 1, ix, arrow_y - 4, r=0, g=255, b=255)
+        pico2d.draw_line(ix + 5, arrow_y + 1, ix, arrow_y - 4, r=0, g=255, b=255)
+
+        # 5. 좌우 날개 브래킷 ( < ◆ > )
+        wing_dist = isize + 5
+        pico2d.draw_line(ix - wing_dist - 4, iy, ix - wing_dist, iy + 4, r=0, g=255, b=255)
+        pico2d.draw_line(ix - wing_dist - 4, iy, ix - wing_dist, iy - 4, r=0, g=255, b=255)
+        pico2d.draw_line(ix + wing_dist + 4, iy, ix + wing_dist, iy + 4, r=0, g=255, b=255)
+        pico2d.draw_line(ix + wing_dist + 4, iy, ix + wing_dist, iy - 4, r=0, g=255, b=255)
 
     def _draw_targeting_brackets(self, cx: float, cy: float, offset: int, blen: int, r: int, g: int, b: int) -> None:
         """타겟팅 코너 브래킷 [ ] 렌더링"""
@@ -299,7 +356,7 @@ class Enemy:
                 sx = int(stack_start_x + i * stack_spacing)
                 pico2d.draw_rectangle(sx - 2, int(stack_y - 2), sx + 2, int(stack_y + 2), r=255, g=220, b=50, filled=True)
 
-        # 7. 처형 가능 상태(is_executable) 다이아몬드 마커 (PRD 5.2절 명세: 청록색 발광)
-        if self.is_executable:
-            marker_y = bar_bottom + bar_h + 18.0
-            self._draw_diamond_marker(self.x, marker_y, 8.0)
+        # 7. 처형 가능 상태 마커 렌더링 (PRD 5.2절 명세: 배후 처형 확정 또는 돌진 처치 체력 도달 시)
+        if self.is_executable_by_dash:
+            marker_y = bar_bottom + bar_h + (24.0 if self.stack_count > 0 else 18.0)
+            self._draw_execution_marker(self.x, marker_y)

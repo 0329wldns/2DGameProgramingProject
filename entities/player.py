@@ -163,9 +163,9 @@ class Player:
                 continue
             dist = math.hypot(self.mouse_x - enemy.x, self.mouse_y - enemy.y)
             if dist <= (enemy.radius + 18.0):
-                # 수리검이 꽂혀있거나(스택) 처형 가능 상태인지 확인
+                # 수리검이 꽂혀있거나(스택) 처형 가능(배후 피격 또는 돌진 일격사 체력) 상태인지 확인
                 has_shurikens = len(getattr(enemy, 'embedded_shurikens', [])) > 0
-                is_executable = getattr(enemy, 'is_executable', False)
+                is_executable = getattr(enemy, 'is_executable_by_dash', False) or getattr(enemy, 'is_executable', False)
                 if has_shurikens or is_executable:
                     self.start_dash(enemy)
                     return True
