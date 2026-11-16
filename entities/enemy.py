@@ -21,13 +21,14 @@ class Enemy:
         dir_x: float = -1.0,
         dir_y: float = 0.0,
         target: Any = None,
+        max_hp: float = config.ENEMY_BASE_MAX_HP,
     ) -> None:
         self.x: float = x
         self.y: float = y
         self.radius: float = config.ENEMY_BASE_RADIUS
 
         # 체력 및 피격 데미지 설정
-        self.max_hp: float = config.ENEMY_BASE_MAX_HP
+        self.max_hp: float = max_hp
         self.hp: float = self.max_hp
         self.shuriken_hit_damage: float = config.SHURIKEN_HIT_DAMAGE
 

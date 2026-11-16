@@ -16,7 +16,7 @@ TARGET_FPS: int = 120
 # ==========================================
 PLAYER_RADIUS: float = 16.0
 PLAYER_MOVE_SPEED: float = 460.0        # 기본 8방향 이동 속도 (px/s)
-PLAYER_MAX_AMMO: int = 3                # 최대 수리검 소지 탄창 수 (밸런스 조정 가능)
+PLAYER_MAX_AMMO: int = 5                # 최대 수리검 소지 탄창 수 (밸런스 조정 가능)
 
 # 구르기(Roll) 파라미터 (I-Frame 없음, 순간 가속 기동)
 PLAYER_ROLL_SPEED: float = 950.0        # 구르기 순간 속도 (px/s)
@@ -25,7 +25,7 @@ PLAYER_ROLL_COOLDOWN: float = 0.35      # 구르기 재사용 대기시간 (초)
 
 # 최초 돌진 및 일섬(Dash) 파라미터 (PRD 3.3절)
 PLAYER_DASH_SPEED: float = 2400.0       # 일섬 관통 이동 속도 (px/s)
-PLAYER_DASH_DISTANCE: float = 180.0     # 일섬 관통 고정 거리 (px)
+PLAYER_DASH_DISTANCE: float = 250.0     # 일섬 관통 고정 거리 (px)
 PLAYER_DASH_STACK_DAMAGE: float = 40.0  # 일반 스택 소모 시 1스택당 데미지
 PLAYER_DASH_PENETRATE_RATIO: float = 0.5 # 관통 궤적 적들에 대한 데미지 비율 (50%)
 

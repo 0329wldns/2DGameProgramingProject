@@ -35,31 +35,48 @@ def init() -> None:
     pico2d.hide_cursor()
 
     # 인게임 커스텀 조준선 생성 (UI 레이어 등록)
-    cursor = Cursor(x=640.0, y=360.0)
+    cursor = Cursor(x=960.0, y=540.0)
     game_world.add_object(cursor, game_world.LAYER_UI)
 
     # 수리검 투척 및 반사 궤적 가이드 생성
     trajectory_guide = TrajectoryGuide(max_bounces=config.SHURIKEN_MAX_BOUNCE)
 
     # 플레이어 생성 (화면 좌측 중앙 부근 스폰)
-    player = Player(x=250.0, y=360.0)
+    player = Player(x=300.0, y=540.0)
     game_world.add_object(player, game_world.LAYER_PLAYER)
 
-    # 테스트용 기둥(장애물) 생성 (PRD 6.2절 사양: 중앙 기둥 배치)
-    pillar = Obstacle(x=640.0, y=360.0, width=80.0, height=220.0)
-    obstacles.append(pillar)
-    game_world.add_object(pillar, game_world.LAYER_OBSTACLE)
+    # 엔티티 스폰 헬퍼
+    def spawn_obstacle(x: float, y: float, w: float, h: float) -> Obstacle:
+        obs = Obstacle(x=x, y=y, width=w, height=h)
+        obstacles.append(obs)
+        game_world.add_object(obs, game_world.LAYER_OBSTACLE)
+        return obs
 
-    # 테스트용 적 생성 (PRD 6.2절 사양: 기둥 우측 배치, 초기 시선 좌측 [-1, 0])
-    enemy = Enemy(x=900.0, y=360.0, dir_x=-1.0, dir_y=0.0, target=player)
-    enemies.append(enemy)
-    game_world.add_object(enemy, game_world.LAYER_ENEMY)
+    def spawn_enemy(x: float, y: float, hp: float = 100.0, dir_x: float = -1.0, dir_y: float = 0.0) -> Enemy:
+        e = Enemy(x=x, y=y, dir_x=dir_x, dir_y=dir_y, target=player, max_hp=hp)
+        enemies.append(e)
+        game_world.add_object(e, game_world.LAYER_ENEMY)
+        return e
 
-    """사용자가 임의로 추가한 블록"""
-    enemy2 = Enemy(x=1000.0, y=360.0, dir_x=-1.0, dir_y=0.0, target=player)
-    enemies.append(enemy2)
-    game_world.add_object(enemy2, game_world.LAYER_ENEMY)
-    """사용자가 임의로 추가한 블록"""
+    # 1. 전술적 반사용 기둥(장애물) 배치
+    spawn_obstacle(x=750.0, y=540.0, w=80.0, h=340.0)   # 중앙 좌측 기둥 (적 전방 엄폐)
+    spawn_obstacle(x=1450.0, y=540.0, w=80.0, h=240.0)  # 중앙 우측 기둥 (외곽 반사 지원)
+
+    # 2. 연쇄 돌진(Chain Dash) 콤보 테스트용 적 배치 (이동거리 250px 최적화)
+    # [적 1] 기둥 뒤 메인 타겟: 배후 반사타격으로 처형 시동 (HP 100)
+    spawn_enemy(x=950.0, y=540.0, hp=100.0, dir_x=-1.0, dir_y=0.0)
+
+    # [적 2] 1차 관통 궤적 테스트: 적 1 처형 돌진 경로상에서 휩쓸려 사망 (HP 50)
+    spawn_enemy(x=1100.0, y=540.0, hp=50.0, dir_x=-1.0, dir_y=0.0)
+
+    # [적 3] 2차 연쇄 돌진 (우상단 징검다리, HP 50)
+    spawn_enemy(x=1300.0, y=780.0, hp=50.0, dir_x=-1.0, dir_y=-0.5)
+
+    # [적 4] 3차 연쇄 돌진 (우측 외곽 징검다리, HP 50)
+    spawn_enemy(x=1650.0, y=540.0, hp=50.0, dir_x=-1.0, dir_y=0.0)
+
+    # [적 5] 4차 연쇄 돌진 (우하단 징검다리, HP 50)
+    spawn_enemy(x=1300.0, y=300.0, hp=50.0, dir_x=-1.0, dir_y=0.5)
 
 
 def finish() -> None:
