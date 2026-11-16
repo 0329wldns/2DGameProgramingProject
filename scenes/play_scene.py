@@ -82,6 +82,7 @@ def init() -> None:
 def finish() -> None:
     """씬 종료: 리소스 해제 및 객체 정리"""
     global player, cursor, trajectory_guide, obstacles, enemies
+    game_framework.reset_visual_effects()
     pico2d.show_cursor()
     game_world.clear()
     obstacles.clear()
@@ -95,6 +96,7 @@ def restart() -> None:
     """F1 키 입력 시 씬을 완전히 초기 상태로 리셋합니다."""
     finish()
     game_framework.set_time_scale(1.0)
+    game_framework.reset_visual_effects()
     init()
 
 

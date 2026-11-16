@@ -61,6 +61,11 @@ class Player:
         self.bullet_time_timer: float = 0.0
         self.dash_killed_any: bool = False      # 이번 돌진(최초/연쇄)에서 적 처치 여부
 
+        # 청록색 궤적 잔상 관리 (PRD 5.2절)
+        # 각 잔상: [x, y, timer, max_timer, dir_x, dir_y]
+        self.afterimages: list[list[float]] = []
+        self.afterimage_spawn_timer: float = 0.0
+
         # 탄창 자원 관리 (config.PLAYER_MAX_AMMO)
         self.max_ammo: int = config.PLAYER_MAX_AMMO
         self.current_ammo: int = self.max_ammo
@@ -205,6 +210,13 @@ class Player:
         self.dash_base_damage = damage
         self.dash_hit_enemies = {id(target)}
 
+        # 타격감 연출: Hit-Stop 0.08초, Screen Shake, 잔상 및 타겟 섬광 (PRD 5.2절)
+        game_framework.start_hit_stop(config.HIT_STOP_DURATION)
+        game_framework.start_screen_shake(config.SCREEN_SHAKE_INTENSITY, config.SCREEN_SHAKE_DURATION)
+        if hasattr(target, 'hit_flash_timer'):
+            target.hit_flash_timer = 0.16
+        self.afterimages.append([self.x, self.y, config.AFTERIMAGE_LIFETIME, config.AFTERIMAGE_LIFETIME, self.dash_dir_x, self.dash_dir_y])
+
         # 처치 판정 및 플래그 초기화
         self.dash_killed_any = False
         if target.hp <= 0.0:
@@ -214,6 +226,7 @@ class Player:
         # FSM 상태 전이
         self.state = STATE_DASH
         self.dash_timer = self.dash_duration
+        self.afterimage_spawn_timer = 0.0
 
     def update_dash(self, dt: float) -> None:
         prev_x = self.x
@@ -226,6 +239,12 @@ class Player:
 
         self.x = max(self.radius, min(config.CANVAS_WIDTH - self.radius, self.x))
         self.y = max(self.radius, min(config.CANVAS_HEIGHT - self.radius, self.y))
+
+        # 이동 중 청록색 잔상 생성 (주기적 샘플링)
+        self.afterimage_spawn_timer += dt
+        if self.afterimage_spawn_timer >= 0.015:
+            self.afterimage_spawn_timer = 0.0
+            self.afterimages.append([self.x, self.y, config.AFTERIMAGE_LIFETIME, config.AFTERIMAGE_LIFETIME, self.dash_dir_x, self.dash_dir_y])
 
         # 이번 프레임의 이동 선분 (prev_x, prev_y) -> (self.x, self.y)
         seg_dx = self.x - prev_x
@@ -255,7 +274,12 @@ class Player:
 
             if dist <= hit_dist:
                 enemy.hp = max(0.0, enemy.hp - penetrate_damage)
+                if hasattr(enemy, 'hit_flash_timer'):
+                    enemy.hit_flash_timer = 0.14
                 self.dash_hit_enemies.add(enemy_id)
+                # 관통 타격 시 경쾌한 히트스탑 및 카메라 진동
+                game_framework.start_hit_stop(0.05)
+                game_framework.start_screen_shake(10.0, 0.12)
                 if enemy.hp <= 0.0:
                     enemy.is_dead = True
                     self.dash_killed_any = True
@@ -328,6 +352,8 @@ class Player:
         self.dash_timer = self.dash_duration
         self.dash_hit_enemies.clear()
         self.dash_killed_any = False
+        self.afterimage_spawn_timer = 0.0
+        self.afterimages.append([self.x, self.y, config.AFTERIMAGE_LIFETIME, config.AFTERIMAGE_LIFETIME, self.dash_dir_x, self.dash_dir_y])
         if self.dash_base_damage <= 0.0:
             self.dash_base_damage = config.ENEMY_BASE_MAX_HP
 
@@ -415,7 +441,12 @@ class Player:
         self.y = max(self.radius, min(config.CANVAS_HEIGHT - self.radius, self.y))
 
     def update(self, scaled_dt: float, unscaled_dt: float) -> None:
-        """프레임 업데이트 (FSM 상태별 처리 및 쿨다운 차감)"""
+        """프레임 업데이트 (FSM 상태별 처리 및 쿨다운/잔상 차감)"""
+        # 잔상 타이머 갱신 (unscaled_dt 기준 감쇄)
+        for img in self.afterimages:
+            img[2] -= unscaled_dt
+        self.afterimages = [img for img in self.afterimages if img[2] > 0.0]
+
         # 쿨다운 타이머 갱신 (scaled_dt 기준)
         if self.roll_cooldown_timer > 0.0:
             self.roll_cooldown_timer = max(0.0, self.roll_cooldown_timer - scaled_dt)
@@ -431,21 +462,19 @@ class Player:
             self.update_movement(scaled_dt)
 
     def draw(self) -> None:
-        """플레이어 임시 렌더링 (사각 히트박스 시각화, 일섬 궤적, 불릿타임 조준선 및 머리 위 탄창 표시)"""
+        """플레이어 임시 렌더링 (사각 히트박스 시각화, 청록 잔상, 일섬 궤적, 불릿타임 조준선 및 머리 위 탄창 표시)"""
+        # 1. 청록색 궤적 잔상(Afterimage) 렌더링 (PRD 5.2절)
+        for img in self.afterimages:
+            ix, iy, timer, max_timer, dir_x, dir_y = img
+            progress = max(0.0, min(1.0, timer / max_timer))
+            alpha = int(220 * progress)
+            rx = int(self.radius * (0.7 + 0.3 * progress))
+            ry = int(self.radius * (0.7 + 0.3 * progress))
+            pico2d.draw_rectangle(int(ix - rx), int(iy - ry), int(ix + rx), int(iy + ry), r=0, g=255, b=255, a=alpha)
+            pico2d.draw_line(int(ix - dir_x * 30.0 * progress), int(iy - dir_y * 30.0 * progress), int(ix), int(iy), r=0, g=255, b=255, a=alpha)
+
+        # 2. 불릿타임 조준선 및 착지 지점 시각화 (PRD 3.4 & 5.2절)
         if self.state == STATE_BULLET_TIME:
-            # TODO(Copilot): 불릿타임 조준선 및 착지 예상 지점 시각화 (PRD 3.4 & 5.2절)
-            # 1. 플레이어 중심(self.x, self.y)에서 마우스(self.mouse_x, self.mouse_y) 방향 벡터 정규화:
-            #    to_x = self.mouse_x - self.x
-            #    to_y = self.mouse_y - self.y
-            #    dist = math.hypot(to_x, to_y)
-            # 2. 돌진 도달 착지 지점 계산 (self.dash_distance = 180px):
-            #    if dist > 0.0:
-            #        end_x = int(self.x + (to_x / dist) * self.dash_distance)
-            #        end_y = int(self.y + (to_y / dist) * self.dash_distance)
-            #    else:
-            #        end_x, end_y = int(self.x + self.dash_distance), int(self.y)
-            # 3. pico2d.draw_line(int(self.x), int(self.y), end_x, end_y) 로 조준선 렌더링
-            # 4. pico2d.draw_rectangle(end_x - 3, end_y - 3, end_x + 3, end_y + 3) 로 착지 지점 마커 표시
             to_x = self.mouse_x - self.x
             to_y = self.mouse_y - self.y
             dist = math.hypot(to_x, to_y)
@@ -457,15 +486,17 @@ class Player:
 
             end_x = int(self.x + dir_x * self.dash_distance)
             end_y = int(self.y + dir_y * self.dash_distance)
-            pico2d.draw_line(int(self.x), int(self.y), end_x, end_y)
-            pico2d.draw_rectangle(end_x - 3, end_y - 3, end_x + 3, end_y + 3)
+            pico2d.draw_line(int(self.x), int(self.y), end_x, end_y, r=0, g=255, b=255)
+            pico2d.draw_rectangle(end_x - 4, end_y - 4, end_x + 4, end_y + 4, r=0, g=255, b=255, filled=True)
         elif self.state == STATE_DASH:
-            # 일섬 관통 궤적 연출 (관성 방향으로 길게 뻗는 선)
-            tail_x = int(self.x - self.dash_dir_x * 40.0)
-            tail_y = int(self.y - self.dash_dir_y * 40.0)
-            pico2d.draw_line(tail_x, tail_y, int(self.x), int(self.y))
+            # 일섬 관통 궤적 연출 (청록색 발광 삼중선)
+            tail_x = int(self.x - self.dash_dir_x * 70.0)
+            tail_y = int(self.y - self.dash_dir_y * 70.0)
+            pico2d.draw_line(tail_x, tail_y, int(self.x), int(self.y), r=0, g=255, b=255)
+            pico2d.draw_line(tail_x, tail_y + 1, int(self.x), int(self.y) + 1, r=0, g=255, b=255)
+            pico2d.draw_line(tail_x, tail_y - 1, int(self.x), int(self.y) - 1, r=0, g=255, b=255)
 
-        # 구르기 상태일 때는 순간적으로 납작/축소되는 시각적 피드백 제공
+        # 3. 구르기 상태 시 순간 축소 피드백
         rx = self.radius * 0.7 if self.state == STATE_ROLL else self.radius
         ry = self.radius * 0.7 if self.state == STATE_ROLL else self.radius
 
@@ -473,9 +504,9 @@ class Player:
         bottom = int(self.y - ry)
         right = int(self.x + rx)
         top = int(self.y + ry)
-        pico2d.draw_rectangle(left, bottom, right, top)
+        pico2d.draw_rectangle(left, bottom, right, top, r=0, g=255, b=255)
 
-        # 잔여 탄창 시각화 (self.max_ammo 개수에 맞춰 항상 플레이어 정중앙에 동적 정렬)
+        # 4. 잔여 탄창 시각화 (청록색 네온 탄창 도트)
         spacing = 11.0
         total_span = (self.max_ammo - 1) * spacing if self.max_ammo > 1 else 0.0
         start_x = self.x - total_span / 2.0
@@ -483,7 +514,6 @@ class Player:
         for i in range(self.max_ammo):
             bx = start_x + i * spacing
             if i < self.current_ammo:
-                pico2d.draw_rectangle(int(bx - 3), int(ammo_y - 3), int(bx + 3), int(ammo_y + 3))
+                pico2d.draw_rectangle(int(bx - 3), int(ammo_y - 3), int(bx + 3), int(ammo_y + 3), r=0, g=255, b=255, filled=True)
             else:
-                # 사용한 빈 탄창 슬롯 표시 (작은 도트)
-                pico2d.draw_rectangle(int(bx - 1), int(ammo_y - 1), int(bx + 1), int(ammo_y + 1))
+                pico2d.draw_rectangle(int(bx - 1), int(ammo_y - 1), int(bx + 1), int(ammo_y + 1), r=0, g=90, b=90)

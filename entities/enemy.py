@@ -49,6 +49,7 @@ class Enemy:
         self.stack_count: int = 0
         self.is_executable: bool = False
         self.is_dead: bool = False
+        self.hit_flash_timer: float = 0.0       # 피격 시 순간 섬광 타이머
         self.embedded_shurikens: list[Any] = []
         # 귀속된 수리검의 적 중심 기준 상대 오프셋 리스트 [(offset_x, offset_y), ...]
         self._embedded_offsets: list[tuple[float, float]] = []
@@ -155,6 +156,7 @@ class Enemy:
             self.stack_count += 1
 
         self.hp = max(0.0, self.hp - self.shuriken_hit_damage)
+        self.hit_flash_timer = 0.12
         self.attach_shuriken(shuriken)
 
         # 적이 이번 피격으로 사망한 경우 박힌 모든 수리검을 즉시 복귀 상태로 전환하여 회수
@@ -166,6 +168,9 @@ class Enemy:
 
     def update(self, scaled_dt: float, unscaled_dt: float) -> None:
         """적 상태 업데이트 (시선 회전 및 귀속된 수리검 위치 동기화)"""
+        if self.hit_flash_timer > 0.0:
+            self.hit_flash_timer = max(0.0, self.hit_flash_timer - unscaled_dt)
+
         if self.is_dead:
             return
 
@@ -178,45 +183,52 @@ class Enemy:
             shuriken.y = self.y + oy
 
     def _draw_diamond_marker(self, cx: float, cy: float, size: float) -> None:
-        """처형 가능 상태(is_executable)일 때 체력바 상단에 표시할 다이아몬드 마커"""
+        """처형 가능 상태(is_executable)일 때 체력바 상단에 표시할 다이아몬드 마커 (청록색 네온)"""
         ix, iy, isize = int(cx), int(cy), int(size)
-        pico2d.draw_line(ix, iy + isize, ix + isize, iy)
-        pico2d.draw_line(ix + isize, iy, ix, iy - isize)
-        pico2d.draw_line(ix, iy - isize, ix - isize, iy)
-        pico2d.draw_line(ix - isize, iy, ix, iy + isize)
+        pico2d.draw_line(ix, iy + isize, ix + isize, iy, r=0, g=255, b=255)
+        pico2d.draw_line(ix + isize, iy, ix, iy - isize, r=0, g=255, b=255)
+        pico2d.draw_line(ix, iy - isize, ix - isize, iy, r=0, g=255, b=255)
+        pico2d.draw_line(ix - isize, iy, ix, iy + isize, r=0, g=255, b=255)
 
     def draw(self) -> None:
         """적 본체, 시선 방향선, 체력바, 스택 및 처형 마커 렌더링"""
         if self.is_dead:
-            # 사망한 적 시각화 (X 표시 히트박스)
+            # 사망한 적 시각화 (어두운 회색 X 표시 히트박스)
             ix, iy, ir = int(self.x), int(self.y), int(self.radius)
-            pico2d.draw_rectangle(ix - ir, iy - ir, ix + ir, iy + ir)
-            pico2d.draw_line(ix - ir, iy - ir, ix + ir, iy + ir)
-            pico2d.draw_line(ix - ir, iy + ir, ix + ir, iy - ir)
+            pico2d.draw_rectangle(ix - ir, iy - ir, ix + ir, iy + ir, r=70, g=70, b=80)
+            pico2d.draw_line(ix - ir, iy - ir, ix + ir, iy + ir, r=70, g=70, b=80)
+            pico2d.draw_line(ix - ir, iy + ir, ix + ir, iy - ir, r=70, g=70, b=80)
             return
 
-        # 1. 적 본체 히트박스
+        # 1. 적 본체 히트박스 (붉은색 네온)
         left = int(self.x - self.radius)
         bottom = int(self.y - self.radius)
         right = int(self.x + self.radius)
         top = int(self.y + self.radius)
-        pico2d.draw_rectangle(left, bottom, right, top)
+        pico2d.draw_rectangle(left, bottom, right, top, r=230, g=65, b=65)
 
-        # 2. 시선 방향 벡터(F) 표시선 (정면이 어디인지 명확히 시각화)
+        # 2. 피격 섬광/베기 이펙트 (Hit Flash)
+        if self.hit_flash_timer > 0.0:
+            flash_r = int(self.radius + 6.0)
+            pico2d.draw_line(int(self.x - flash_r), int(self.y - flash_r), int(self.x + flash_r), int(self.y + flash_r), r=0, g=255, b=255)
+            pico2d.draw_line(int(self.x - flash_r), int(self.y + flash_r), int(self.x + flash_r), int(self.y - flash_r), r=0, g=255, b=255)
+
+        # 3. 시선 방향 벡터(F) 표시선 (정면 황색 시각화)
         look_x = int(self.x + self.dir_x * (self.radius + 14.0))
         look_y = int(self.y + self.dir_y * (self.radius + 14.0))
-        pico2d.draw_line(int(self.x), int(self.y), look_x, look_y)
+        pico2d.draw_line(int(self.x), int(self.y), look_x, look_y, r=255, g=190, b=60)
 
-        # 3. 상단 체력바 표시
+        # 4. 상단 체력바 표시 (배경 및 잔여 체력)
         bar_w = 40.0
         bar_h = 5.0
         bar_left = int(self.x - bar_w / 2.0)
         bar_bottom = int(self.y + self.radius + 8.0)
+        pico2d.draw_rectangle(bar_left, bar_bottom, int(bar_left + bar_w), int(bar_bottom + bar_h), r=100, g=30, b=30)
         hp_ratio = max(0.0, min(1.0, self.hp / self.max_hp))
         fill_right = int(bar_left + bar_w * hp_ratio)
-        pico2d.draw_rectangle(bar_left, bar_bottom, fill_right, int(bar_bottom + bar_h))
+        pico2d.draw_rectangle(bar_left, bar_bottom, fill_right, int(bar_bottom + bar_h), r=255, g=50, b=50, filled=True)
 
-        # 4. 일반 스택 표시 (누적된 stack_count 개수에 맞춘 동적 중앙 정렬)
+        # 5. 일반 스택 표시 (누적된 stack_count 개수에 맞춘 동적 중앙 정렬)
         if self.stack_count > 0:
             stack_y = bar_bottom + bar_h + 6.0
             stack_spacing = 9.0
@@ -224,9 +236,9 @@ class Enemy:
             stack_start_x = self.x - stack_span / 2.0
             for i in range(self.stack_count):
                 sx = int(stack_start_x + i * stack_spacing)
-                pico2d.draw_rectangle(sx - 2, int(stack_y - 2), sx + 2, int(stack_y + 2))
+                pico2d.draw_rectangle(sx - 2, int(stack_y - 2), sx + 2, int(stack_y + 2), r=255, g=220, b=50, filled=True)
 
-        # 5. 처형 가능 상태(is_executable) 다이아몬드 마커 (PRD 5.2절 명세)
+        # 6. 처형 가능 상태(is_executable) 다이아몬드 마커 (PRD 5.2절 명세: 청록색 발광)
         if self.is_executable:
             marker_y = bar_bottom + bar_h + 18.0
             self._draw_diamond_marker(self.x, marker_y, 8.0)

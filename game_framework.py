@@ -4,12 +4,15 @@ game_framework.py
 """
 
 import time
+import random
 from typing import Any
 import pico2d.pico2d as _pico2d_internal
 from sdl2 import (
     SDL_SetWindowFullscreen,
     SDL_WINDOW_FULLSCREEN_DESKTOP,
-    SDL_RenderSetLogicalSize
+    SDL_RenderSetLogicalSize,
+    SDL_RenderSetViewport,
+    SDL_Rect,
 )
 import config
 
@@ -21,6 +24,15 @@ stack: list[Any] = []
 time_scale: float = 1.0
 target_fps: int = config.TARGET_FPS
 frame_time_limit: float = 1.0 / target_fps
+
+# 타격감 및 연출 시스템 (PRD 5.2절: Hit-Stop 0.08초, Screen Shake)
+hit_stop_timer: float = 0.0
+
+shake_timer: float = 0.0
+shake_duration: float = 0.0
+shake_intensity: float = 0.0
+shake_offset_x: float = 0.0
+shake_offset_y: float = 0.0
 
 # 가상 논리 해상도 및 전체화면 상태 (PRD 1절: 1280x720 16:9 고정)
 logical_width: int = config.CANVAS_WIDTH
@@ -68,6 +80,38 @@ def get_time_scale() -> float:
     return time_scale
 
 
+def start_hit_stop(duration: float = config.HIT_STOP_DURATION) -> None:
+    """돌진 적중 시 순간적인 역경직(Hit-Stop) 프레임 정지를 발동합니다."""
+    global hit_stop_timer
+    hit_stop_timer = max(hit_stop_timer, duration)
+
+
+def start_screen_shake(
+    intensity: float = config.SCREEN_SHAKE_INTENSITY,
+    duration: float = config.SCREEN_SHAKE_DURATION,
+) -> None:
+    """피격 또는 처형 시 화면 흔들림(Screen Shake)을 발동합니다."""
+    global shake_timer, shake_duration, shake_intensity
+    shake_timer = duration
+    shake_duration = duration
+    shake_intensity = max(shake_intensity, intensity)
+
+
+def reset_visual_effects() -> None:
+    """씬 리셋 또는 종료 시 진동/히트스탑 이펙트를 초기화합니다."""
+    global hit_stop_timer, shake_timer, shake_duration, shake_intensity, shake_offset_x, shake_offset_y
+    hit_stop_timer = 0.0
+    shake_timer = 0.0
+    shake_duration = 0.0
+    shake_intensity = 0.0
+    shake_offset_x = 0.0
+    shake_offset_y = 0.0
+    renderer = getattr(_pico2d_internal, 'renderer', None)
+    if renderer is not None:
+        default_rect = SDL_Rect(0, 0, logical_width, logical_height)
+        SDL_RenderSetViewport(renderer, default_rect)
+
+
 def change_scene(scene: Any) -> None:
     """현재 씬을 종료하고 새로운 씬으로 전환합니다."""
     global stack
@@ -106,6 +150,7 @@ def quit() -> None:
 def run(start_scene: Any) -> None:
     """게임 메인 루프를 실행합니다."""
     global running, stack
+    global hit_stop_timer, shake_timer, shake_duration, shake_intensity, shake_offset_x, shake_offset_y
     running = True
 
     # 가상 해상도 스케일러 자동 초기화
@@ -127,11 +172,37 @@ def run(start_scene: Any) -> None:
 
         scaled_dt = unscaled_dt * time_scale
 
-        # 활성화된 씬 처리
+        # 1. 화면 진동(Screen Shake) 오프셋 갱신 (현실 시간 unscaled_dt 기준 감쇄)
+        if shake_timer > 0.0:
+            shake_timer = max(0.0, shake_timer - unscaled_dt)
+            decay = shake_timer / shake_duration if shake_duration > 0.0 else 0.0
+            curr_intensity = shake_intensity * decay
+            shake_offset_x = random.uniform(-curr_intensity, curr_intensity)
+            shake_offset_y = random.uniform(-curr_intensity, curr_intensity)
+        else:
+            shake_offset_x = 0.0
+            shake_offset_y = 0.0
+            shake_intensity = 0.0
+
         current_scene = stack[-1]
         current_scene.handle_events()
-        current_scene.update(scaled_dt, unscaled_dt)
-        current_scene.draw()
+
+        # 2. 히트스탑(Hit-Stop) 처리 (프레임 정지 동안 엔티티 업데이트 일시정지)
+        if hit_stop_timer > 0.0:
+            hit_stop_timer = max(0.0, hit_stop_timer - unscaled_dt)
+        else:
+            current_scene.update(scaled_dt, unscaled_dt)
+
+        # 3. 화면 진동 뷰포트 오프셋 적용 후 씬 렌더링
+        renderer = getattr(_pico2d_internal, 'renderer', None)
+        if renderer is not None and (shake_offset_x != 0.0 or shake_offset_y != 0.0):
+            view_rect = SDL_Rect(int(shake_offset_x), int(shake_offset_y), logical_width, logical_height)
+            SDL_RenderSetViewport(renderer, view_rect)
+            current_scene.draw()
+            default_rect = SDL_Rect(0, 0, logical_width, logical_height)
+            SDL_RenderSetViewport(renderer, default_rect)
+        else:
+            current_scene.draw()
 
         # 프레임 제한을 위한 미세 딜레이
         elapsed = time.time() - current_time
