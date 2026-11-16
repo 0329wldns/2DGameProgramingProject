@@ -32,8 +32,8 @@ class Cursor:
     def draw(self) -> None:
         """형광 네온 테마의 정밀 십자선(Crosshair) 렌더링"""
         ix, iy = int(self.x), int(self.y)
-        gap = int(self.gap * (1.5 if self.is_hovering_target else 1.0))
-        size = int(self.size * (1.3 if self.is_hovering_target else 1.0))
+        gap = int(self.gap)
+        size = int(self.size)
 
         # 1. 중심 점 (Center Dot)
         pico2d.draw_rectangle(ix - 1, iy - 1, ix + 1, iy + 1)
@@ -47,9 +47,4 @@ class Cursor:
         pico2d.draw_line(ix, iy - gap - size, ix, iy - gap)
         # 상단 선
         pico2d.draw_line(ix, iy + gap, ix, iy + gap + size)
-
-        # 3. 타겟 호버 중일 때 보조 조준 박스 (Target Lock Reticle)
-        if self.is_hovering_target:
-            box_r = gap + size
-            pico2d.draw_rectangle(ix - box_r, iy - box_r, ix + box_r, iy + box_r)
 

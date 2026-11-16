@@ -49,10 +49,16 @@ class Enemy:
         self.stack_count: int = 0
         self.is_executable: bool = False
         self.is_dead: bool = False
+        self.is_hovered: bool = False           # 마우스 커서 호버 여부
         self.hit_flash_timer: float = 0.0       # 피격 시 순간 섬광 타이머
         self.embedded_shurikens: list[Any] = []
         # 귀속된 수리검의 적 중심 기준 상대 오프셋 리스트 [(offset_x, offset_y), ...]
         self._embedded_offsets: list[tuple[float, float]] = []
+
+    @property
+    def is_dash_target(self) -> bool:
+        """돌진(Dash)이 가능한 상태(수리검 꽂힘 또는 처형 가능)인지 확인"""
+        return (len(self.embedded_shurikens) > 0 or self.is_executable) and not self.is_dead and self.hp > 0.0
 
     def update_facing(self, dt: float) -> None:
         """
@@ -190,6 +196,48 @@ class Enemy:
         pico2d.draw_line(ix, iy - isize, ix - isize, iy, r=0, g=255, b=255)
         pico2d.draw_line(ix - isize, iy, ix, iy + isize, r=0, g=255, b=255)
 
+    def _draw_targeting_brackets(self, cx: float, cy: float, offset: int, blen: int, r: int, g: int, b: int) -> None:
+        """타겟팅 코너 브래킷 [ ] 렌더링"""
+        ix, iy = int(cx), int(cy)
+        # Top-Left [
+        pico2d.draw_line(ix - offset, iy + offset - blen, ix - offset, iy + offset, r=r, g=g, b=b)
+        pico2d.draw_line(ix - offset, iy + offset, ix - offset + blen, iy + offset, r=r, g=g, b=b)
+        # Top-Right ]
+        pico2d.draw_line(ix + offset - blen, iy + offset, ix + offset, iy + offset, r=r, g=g, b=b)
+        pico2d.draw_line(ix + offset, iy + offset, ix + offset, iy + offset - blen, r=r, g=g, b=b)
+        # Bottom-Left [
+        pico2d.draw_line(ix - offset, iy - offset + blen, ix - offset, iy - offset, r=r, g=g, b=b)
+        pico2d.draw_line(ix - offset, iy - offset, ix - offset + blen, iy - offset, r=r, g=g, b=b)
+        # Bottom-Right ]
+        pico2d.draw_line(ix + offset - blen, iy - offset, ix + offset, iy - offset, r=r, g=g, b=b)
+        pico2d.draw_line(ix + offset, iy - offset, ix + offset, iy - offset + blen, r=r, g=g, b=b)
+
+    def _draw_dash_aim_preview(self) -> None:
+        """돌진 타겟 호버 시 돌진 진입 및 관통 예상 궤적 Ray Line 시각화 (PRD 5.2절)"""
+        if self.target is None or getattr(self.target, 'is_dead', False):
+            return
+
+        to_x = self.x - self.target.x
+        to_y = self.y - self.target.y
+        dist = math.hypot(to_x, to_y)
+        if dist <= 1e-4:
+            return
+
+        dash_dir_x = to_x / dist
+        dash_dir_y = to_y / dist
+        dash_dist = getattr(self.target, 'dash_distance', config.PLAYER_DASH_DISTANCE)
+
+        # 1. 플레이어 -> 적 진입 접근선 (Cyan/White)
+        pico2d.draw_line(int(self.target.x), int(self.target.y), int(self.x), int(self.y), r=0, g=180, b=220)
+
+        # 2. 적 -> 관통 도착 지점 일섬 궤적 Ray Line (Bright Cyan)
+        dest_x = int(self.x + dash_dir_x * dash_dist)
+        dest_y = int(self.y + dash_dir_y * dash_dist)
+        pico2d.draw_line(int(self.x), int(self.y), dest_x, dest_y, r=0, g=255, b=255)
+
+        # 3. 도착 지점 랜딩 마커 (청록색 사각형)
+        pico2d.draw_rectangle(dest_x - 4, dest_y - 4, dest_x + 4, dest_y + 4, r=0, g=255, b=255, filled=True)
+
     def draw(self) -> None:
         """적 본체, 시선 방향선, 체력바, 스택 및 처형 마커 렌더링"""
         if self.is_dead:
@@ -207,18 +255,31 @@ class Enemy:
         top = int(self.y + self.radius)
         pico2d.draw_rectangle(left, bottom, right, top, r=230, g=65, b=65)
 
-        # 2. 피격 섬광/베기 이펙트 (Hit Flash)
+        # 2. 마우스 커서 호버 시 타겟 하이라이트 (PRD 5.2절)
+        if self.is_hovered:
+            if self.is_dash_target:
+                # 돌진 가능 타겟: 청록색 발광 이중 테두리 + 코너 브래킷 [ ] + 관통 Ray Line
+                pico2d.draw_rectangle(left - 2, bottom - 2, right + 2, top + 2, r=0, g=255, b=255)
+                self._draw_targeting_brackets(self.x, self.y, offset=int(self.radius + 7.0), blen=8, r=0, g=255, b=255)
+                pico2d.draw_rectangle(left - 7, bottom - 7, right + 7, top + 7, r=0, g=255, b=255)
+                self._draw_dash_aim_preview()
+            else:
+                # 돌진 불가능(수리검 미부착): 은은한 백색/회색 타겟 브래킷 (조준 호버 인지 피드백)
+                self._draw_targeting_brackets(self.x, self.y, offset=int(self.radius + 5.0), blen=6, r=200, g=200, b=200)
+                pico2d.draw_rectangle(left - 5, bottom - 5, right + 5, top + 5, r=160, g=160, b=160)
+
+        # 3. 피격 섬광/베기 이펙트 (Hit Flash)
         if self.hit_flash_timer > 0.0:
             flash_r = int(self.radius + 6.0)
             pico2d.draw_line(int(self.x - flash_r), int(self.y - flash_r), int(self.x + flash_r), int(self.y + flash_r), r=0, g=255, b=255)
             pico2d.draw_line(int(self.x - flash_r), int(self.y + flash_r), int(self.x + flash_r), int(self.y - flash_r), r=0, g=255, b=255)
 
-        # 3. 시선 방향 벡터(F) 표시선 (정면 황색 시각화)
+        # 4. 시선 방향 벡터(F) 표시선 (정면 황색 시각화)
         look_x = int(self.x + self.dir_x * (self.radius + 14.0))
         look_y = int(self.y + self.dir_y * (self.radius + 14.0))
         pico2d.draw_line(int(self.x), int(self.y), look_x, look_y, r=255, g=190, b=60)
 
-        # 4. 상단 체력바 표시 (배경 및 잔여 체력)
+        # 5. 상단 체력바 표시 (배경 및 잔여 체력)
         bar_w = 40.0
         bar_h = 5.0
         bar_left = int(self.x - bar_w / 2.0)
@@ -228,7 +289,7 @@ class Enemy:
         fill_right = int(bar_left + bar_w * hp_ratio)
         pico2d.draw_rectangle(bar_left, bar_bottom, fill_right, int(bar_bottom + bar_h), r=255, g=50, b=50, filled=True)
 
-        # 5. 일반 스택 표시 (누적된 stack_count 개수에 맞춘 동적 중앙 정렬)
+        # 6. 일반 스택 표시 (누적된 stack_count 개수에 맞춘 동적 중앙 정렬)
         if self.stack_count > 0:
             stack_y = bar_bottom + bar_h + 6.0
             stack_spacing = 9.0
@@ -238,7 +299,7 @@ class Enemy:
                 sx = int(stack_start_x + i * stack_spacing)
                 pico2d.draw_rectangle(sx - 2, int(stack_y - 2), sx + 2, int(stack_y + 2), r=255, g=220, b=50, filled=True)
 
-        # 6. 처형 가능 상태(is_executable) 다이아몬드 마커 (PRD 5.2절 명세: 청록색 발광)
+        # 7. 처형 가능 상태(is_executable) 다이아몬드 마커 (PRD 5.2절 명세: 청록색 발광)
         if self.is_executable:
             marker_y = bar_bottom + bar_h + 18.0
             self._draw_diamond_marker(self.x, marker_y, 8.0)

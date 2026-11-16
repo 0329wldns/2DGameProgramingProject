@@ -148,16 +148,21 @@ def update(scaled_dt: float, unscaled_dt: float) -> None:
     # 1. 모든 엔티티 위치 및 상태 갱신
     game_world.update(scaled_dt, unscaled_dt)
 
-    # 2. 커서 타겟 호버(Hover) 검사 (적 위에 커서가 올라갔을 때 조준선 강조)
-    if cursor:
-        is_hover = False
-        for enemy in enemies:
+    # 2. 적 호버(Hover) 검사 (커서가 적 위에 올라갔을 때 해당 적 타겟 하이라이트 활성화)
+    best_enemy = None
+    min_dist = float('inf')
+    for enemy in enemies:
+        enemy.is_hovered = False
+        if cursor and not enemy.is_dead and enemy.hp > 0.0:
             import math
             dist = math.hypot(cursor.x - enemy.x, cursor.y - enemy.y)
-            if dist <= enemy.radius:
-                is_hover = True
-                break
-        cursor.is_hovering_target = is_hover
+            # 플레이어 돌진 타겟팅 인식 반경(radius + 18.0)과 동일하게 판정
+            if dist <= (enemy.radius + 18.0) and dist < min_dist:
+                min_dist = dist
+                best_enemy = enemy
+
+    if best_enemy is not None:
+        best_enemy.is_hovered = True
 
     # 2. 플레이어 vs 장애물 충돌 보정 (Sliding)
     if player:
