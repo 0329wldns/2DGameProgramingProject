@@ -292,7 +292,9 @@ class Player:
         # 1. self.bullet_time_timer -= unscaled_dt (현실 시간 기준 0.8초)
         # 2. 타이머가 0.0 이하가 되면 self.exit_bullet_time() 호출
         """
-        pass
+        self.bullet_time_timer -= unscaled_dt
+        if self.bullet_time_timer <= 0.0:
+            self.exit_bullet_time()
 
     def start_chain_dash(self) -> None:
         """
@@ -309,7 +311,23 @@ class Player:
         #    - self.dash_killed_any = False
         #    - self.dash_base_damage가 0.0 이하인 경우 기본값 config.ENEMY_BASE_MAX_HP로 보정
         """
-        pass
+        game_framework.set_time_scale(1.0)
+
+        to_x = self.mouse_x - self.x
+        to_y = self.mouse_y - self.y
+        dist = math.hypot(to_x, to_y)
+        if dist > 0.0:
+            self.dash_dir_x = to_x / dist
+            self.dash_dir_y = to_y / dist
+        else:
+            self.dash_dir_x, self.dash_dir_y = 1.0, 0.0
+
+        self.state = STATE_DASH
+        self.dash_timer = self.dash_duration
+        self.dash_hit_enemies.clear()
+        self.dash_killed_any = False
+        if self.dash_base_damage <= 0.0:
+            self.dash_base_damage = config.ENEMY_BASE_MAX_HP
 
     def start_roll(self) -> None:
         """
@@ -426,7 +444,19 @@ class Player:
             #        end_x, end_y = int(self.x + self.dash_distance), int(self.y)
             # 3. pico2d.draw_line(int(self.x), int(self.y), end_x, end_y) 로 조준선 렌더링
             # 4. pico2d.draw_rectangle(end_x - 3, end_y - 3, end_x + 3, end_y + 3) 로 착지 지점 마커 표시
-            pass
+            to_x = self.mouse_x - self.x
+            to_y = self.mouse_y - self.y
+            dist = math.hypot(to_x, to_y)
+            if dist > 0.0:
+                dir_x = to_x / dist
+                dir_y = to_y / dist
+            else:
+                dir_x, dir_y = 1.0, 0.0
+
+            end_x = int(self.x + dir_x * self.dash_distance)
+            end_y = int(self.y + dir_y * self.dash_distance)
+            pico2d.draw_line(int(self.x), int(self.y), end_x, end_y)
+            pico2d.draw_rectangle(end_x - 3, end_y - 3, end_x + 3, end_y + 3)
         elif self.state == STATE_DASH:
             # 일섬 관통 궤적 연출 (관성 방향으로 길게 뻗는 선)
             tail_x = int(self.x - self.dash_dir_x * 40.0)
