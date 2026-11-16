@@ -29,6 +29,7 @@ def init() -> None:
     game_world.clear()
     obstacles.clear()
     enemies.clear()
+    game_framework.set_time_scale(1.0)
 
     # 시스템 기본 커서를 숨기고 인게임 크로스헤어로 대체
     pico2d.hide_cursor()

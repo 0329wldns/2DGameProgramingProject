@@ -15,6 +15,7 @@ from sdl2 import (
     SDL_BUTTON_LEFT, SDL_BUTTON_RIGHT
 )
 import game_world
+import game_framework
 import config
 from entities.shuriken import Shuriken
 
@@ -54,6 +55,11 @@ class Player:
         self.dash_dir_y: float = 0.0
         self.dash_base_damage: float = 0.0      # 최초 타겟에게 가해진 데미지 (관통 50% 계산 기준)
         self.dash_hit_enemies: set[int] = set() # 관통 궤적 상 이미 타격된 적 id 집합
+
+        # 불릿타임 및 연쇄 돌진 파라미터 (PRD 3.4절)
+        self.bullet_time_duration: float = config.BULLET_TIME_DURATION
+        self.bullet_time_timer: float = 0.0
+        self.dash_killed_any: bool = False      # 이번 돌진(최초/연쇄)에서 적 처치 여부
 
         # 탄창 자원 관리 (config.PLAYER_MAX_AMMO)
         self.max_ammo: int = config.PLAYER_MAX_AMMO
@@ -131,10 +137,13 @@ class Player:
                 self.mouse_y = float(config.CANVAS_HEIGHT - 1 - event.y)
                 self.shoot_shuriken()
             elif event.button == SDL_BUTTON_RIGHT:
-                # 마우스 좌표 동기화 후 우클릭 타겟 돌진 발동 시도
+                # 마우스 좌표 동기화 후 우클릭 타겟 돌진 또는 연쇄 돌진 발동 시도
                 self.mouse_x = float(event.x)
                 self.mouse_y = float(config.CANVAS_HEIGHT - 1 - event.y)
-                self.try_trigger_dash()
+                if self.state == STATE_BULLET_TIME:
+                    self.start_chain_dash()
+                else:
+                    self.try_trigger_dash()
 
     def try_trigger_dash(self) -> bool:
         """
@@ -145,7 +154,7 @@ class Player:
 
         enemies = game_world.world[game_world.LAYER_ENEMY]
         for enemy in enemies:
-            if getattr(enemy, 'hp', 0.0) <= 0.0:
+            if getattr(enemy, 'is_dead', False) or getattr(enemy, 'hp', 0.0) <= 0.0:
                 continue
             dist = math.hypot(self.mouse_x - enemy.x, self.mouse_y - enemy.y)
             if dist <= (enemy.radius + 18.0):
@@ -196,6 +205,12 @@ class Player:
         self.dash_base_damage = damage
         self.dash_hit_enemies = {id(target)}
 
+        # 처치 판정 및 플래그 초기화
+        self.dash_killed_any = False
+        if target.hp <= 0.0:
+            target.is_dead = True
+            self.dash_killed_any = True
+
         # FSM 상태 전이
         self.state = STATE_DASH
         self.dash_timer = self.dash_duration
@@ -221,7 +236,8 @@ class Player:
         for enemy in game_world.world[game_world.LAYER_ENEMY]:
             enemy_id = id(enemy)
             if (
-                getattr(enemy, 'hp', 0.0) <= 0.0
+                getattr(enemy, 'is_dead', False)
+                or getattr(enemy, 'hp', 0.0) <= 0.0
                 or enemy_id in self.dash_hit_enemies
             ):
                 continue
@@ -240,9 +256,60 @@ class Player:
             if dist <= hit_dist:
                 enemy.hp = max(0.0, enemy.hp - penetrate_damage)
                 self.dash_hit_enemies.add(enemy_id)
+                if enemy.hp <= 0.0:
+                    enemy.is_dead = True
+                    self.dash_killed_any = True
 
         if self.dash_timer <= 0.0:
-            self.state = STATE_NORMAL
+            if self.dash_killed_any:
+                self.enter_bullet_time()
+            else:
+                self.state = STATE_NORMAL
+
+    def enter_bullet_time(self) -> None:
+        """
+        처치 리셋 발동 및 불릿타임 상태 진입 (PRD 3.4절)
+        - FSM 상태를 STATE_BULLET_TIME으로 전이
+        - 전역 시간 배율을 BULLET_TIME_SCALE (0.1)로 감속
+        - 현실 시간(Unscaled Time) 기준 타이머를 BULLET_TIME_DURATION (0.8초)로 설정
+        - dash_killed_any 초기화
+        """
+        self.state = STATE_BULLET_TIME
+        self.bullet_time_timer = self.bullet_time_duration
+        self.dash_killed_any = False
+        game_framework.set_time_scale(config.BULLET_TIME_SCALE)
+
+    def exit_bullet_time(self) -> None:
+        """불릿타임 만료 시 일반 상태 복귀 및 시간 배율 정상화(1.0)"""
+        self.state = STATE_NORMAL
+        self.bullet_time_timer = 0.0
+        game_framework.set_time_scale(1.0)
+
+    def update_bullet_time(self, unscaled_dt: float) -> None:
+        """
+        # TODO(Copilot): 불릿타임 실제 시간 타이머 차감 및 만료 처리
+        # PRD 3.4절 명세:
+        # 1. self.bullet_time_timer -= unscaled_dt (현실 시간 기준 0.8초)
+        # 2. 타이머가 0.0 이하가 되면 self.exit_bullet_time() 호출
+        """
+        pass
+
+    def start_chain_dash(self) -> None:
+        """
+        # TODO(Copilot): 불릿타임 중 연쇄 돌진(Chain Dash) 발동
+        # PRD 3.4절 명세:
+        # 1. 시간 배율 정상화: game_framework.set_time_scale(1.0)
+        # 2. 현재 마우스 커서 방향 벡터 (mouse_x - x, mouse_y - y) 계산 및 정규화
+        #    - 거리(math.hypot) > 0.0 이면 정규화하여 self.dash_dir_x, self.dash_dir_y 설정
+        #    - 0.0 인 경우 기본 (1.0, 0.0)
+        # 3. 상태 및 파라미터 초기화:
+        #    - self.state = STATE_DASH
+        #    - self.dash_timer = self.dash_duration
+        #    - self.dash_hit_enemies.clear()
+        #    - self.dash_killed_any = False
+        #    - self.dash_base_damage가 0.0 이하인 경우 기본값 config.ENEMY_BASE_MAX_HP로 보정
+        """
+        pass
 
     def start_roll(self) -> None:
         """
@@ -338,12 +405,29 @@ class Player:
             self.update_dash(scaled_dt)
         elif self.state == STATE_ROLL:
             self.update_roll(scaled_dt)
+        elif self.state == STATE_BULLET_TIME:
+            self.update_bullet_time(unscaled_dt)
         else:
             self.update_movement(scaled_dt)
 
     def draw(self) -> None:
-        """플레이어 임시 렌더링 (사각 히트박스 시각화, 일섬 궤적 및 머리 위 탄창 표시)"""
-        if self.state == STATE_DASH:
+        """플레이어 임시 렌더링 (사각 히트박스 시각화, 일섬 궤적, 불릿타임 조준선 및 머리 위 탄창 표시)"""
+        if self.state == STATE_BULLET_TIME:
+            # TODO(Copilot): 불릿타임 조준선 및 착지 예상 지점 시각화 (PRD 3.4 & 5.2절)
+            # 1. 플레이어 중심(self.x, self.y)에서 마우스(self.mouse_x, self.mouse_y) 방향 벡터 정규화:
+            #    to_x = self.mouse_x - self.x
+            #    to_y = self.mouse_y - self.y
+            #    dist = math.hypot(to_x, to_y)
+            # 2. 돌진 도달 착지 지점 계산 (self.dash_distance = 180px):
+            #    if dist > 0.0:
+            #        end_x = int(self.x + (to_x / dist) * self.dash_distance)
+            #        end_y = int(self.y + (to_y / dist) * self.dash_distance)
+            #    else:
+            #        end_x, end_y = int(self.x + self.dash_distance), int(self.y)
+            # 3. pico2d.draw_line(int(self.x), int(self.y), end_x, end_y) 로 조준선 렌더링
+            # 4. pico2d.draw_rectangle(end_x - 3, end_y - 3, end_x + 3, end_y + 3) 로 착지 지점 마커 표시
+            pass
+        elif self.state == STATE_DASH:
             # 일섬 관통 궤적 연출 (관성 방향으로 길게 뻗는 선)
             tail_x = int(self.x - self.dash_dir_x * 40.0)
             tail_y = int(self.y - self.dash_dir_y * 40.0)

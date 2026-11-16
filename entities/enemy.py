@@ -47,6 +47,7 @@ class Enemy:
         # 스택 및 처형 상태 (PRD 3.2절)
         self.stack_count: int = 0
         self.is_executable: bool = False
+        self.is_dead: bool = False
         self.embedded_shurikens: list[Any] = []
         # 귀속된 수리검의 적 중심 기준 상대 오프셋 리스트 [(offset_x, offset_y), ...]
         self._embedded_offsets: list[tuple[float, float]] = []
@@ -125,7 +126,7 @@ class Enemy:
         #    - self.attach_shuriken(shuriken) 호출하여 STATE_EMBEDDED 전환 및 적에게 귀속
         # 6. 충돌 처리 완료 후 True 반환
         """
-        if shuriken.state != STATE_FLYING or self.hp <= 0.0:
+        if self.is_dead or shuriken.state != STATE_FLYING or self.hp <= 0.0:
             return False
 
         distance = math.hypot(shuriken.x - self.x, shuriken.y - self.y)
@@ -139,11 +140,17 @@ class Enemy:
             self.stack_count += 1
 
         self.hp = max(0.0, self.hp - self.shuriken_hit_damage)
+        if self.hp <= 0.0:
+            self.is_dead = True
+
         self.attach_shuriken(shuriken)
         return True
 
     def update(self, scaled_dt: float, unscaled_dt: float) -> None:
         """적 상태 업데이트 (시선 회전 및 귀속된 수리검 위치 동기화)"""
+        if self.is_dead:
+            return
+
         self.update_facing(scaled_dt)
 
         # 적 이동 시 박혀있는 수리검들의 위치도 함께 이동하도록 동기화
@@ -162,6 +169,14 @@ class Enemy:
 
     def draw(self) -> None:
         """적 본체, 시선 방향선, 체력바, 스택 및 처형 마커 렌더링"""
+        if self.is_dead:
+            # 사망한 적 시각화 (X 표시 히트박스)
+            ix, iy, ir = int(self.x), int(self.y), int(self.radius)
+            pico2d.draw_rectangle(ix - ir, iy - ir, ix + ir, iy + ir)
+            pico2d.draw_line(ix - ir, iy - ir, ix + ir, iy + ir)
+            pico2d.draw_line(ix - ir, iy + ir, ix + ir, iy - ir)
+            return
+
         # 1. 적 본체 히트박스
         left = int(self.x - self.radius)
         bottom = int(self.y - self.radius)
