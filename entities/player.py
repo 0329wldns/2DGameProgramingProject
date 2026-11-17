@@ -517,30 +517,3 @@ class Player:
                 pico2d.draw_rectangle(int(bx - 3), int(ammo_y - 3), int(bx + 3), int(ammo_y + 3), r=0, g=255, b=255, filled=True)
             else:
                 pico2d.draw_rectangle(int(bx - 1), int(ammo_y - 1), int(bx + 1), int(ammo_y + 1), r=0, g=90, b=90)
-
-        # 5. 불릿타임 타이머 바 렌더링 (PRD 3.4절: 잔여 시간 비례 점진적 감소)
-        if self.state == STATE_BULLET_TIME and self.bullet_time_duration > 0.0:
-            ratio = max(0.0, min(1.0, self.bullet_time_timer / self.bullet_time_duration))
-            bt_bar_w = 54.0
-            bt_bar_h = 5.0
-            bt_left = int(self.x - bt_bar_w / 2.0)
-            bt_bottom = int(ammo_y + 9.0)
-            bt_right = int(bt_left + bt_bar_w)
-            bt_top = int(bt_bottom + bt_bar_h)
-
-            # 배경 바 (Dark Slate)
-            pico2d.draw_rectangle(bt_left, bt_bottom, bt_right, bt_top, r=15, g=30, b=45)
-
-            # 진행률 바 (25% 미만 잔여 시 경고 주황색 플래시, 평상시 형광 청록색)
-            fill_w = bt_bar_w * ratio
-            if fill_w > 0:
-                if ratio > 0.25:
-                    r, g, b = 0, 255, 255
-                else:
-                    r, g, b = 255, 170, 30
-                pico2d.draw_rectangle(bt_left, bt_bottom, int(bt_left + fill_w), bt_top, r=r, g=g, b=b, filled=True)
-
-            # 외곽 테두리 및 사이드 악센트
-            pico2d.draw_rectangle(bt_left - 1, bt_bottom - 1, bt_right + 1, bt_top + 1, r=0, g=200, b=240)
-            pico2d.draw_line(bt_left - 3, bt_bottom + 2, bt_left - 1, bt_bottom + 2, r=0, g=255, b=255)
-            pico2d.draw_line(bt_right + 1, bt_bottom + 2, bt_right + 3, bt_bottom + 2, r=0, g=255, b=255)
