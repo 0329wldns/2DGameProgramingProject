@@ -25,7 +25,7 @@ PLAYER_ROLL_COOLDOWN: float = 0.35      # 구르기 재사용 대기시간 (초)
 
 # 최초 돌진 및 일섬(Dash) 파라미터 (PRD 3.3절)
 PLAYER_DASH_SPEED: float = 2400.0       # 일섬 관통 이동 속도 (px/s)
-PLAYER_DASH_DISTANCE: float = 250.0     # 일섬 관통 고정 거리 (px)
+PLAYER_DASH_DISTANCE: float = 400.0     # 일섬 관통 고정 거리 (px)
 PLAYER_DASH_STACK_DAMAGE: float = 40.0  # 일반 스택 소모 시 1스택당 데미지
 PLAYER_DASH_PENETRATE_RATIO: float = 0.5 # 관통 궤적 적들에 대한 데미지 비율 (50%)
 
@@ -49,7 +49,7 @@ ENEMY_BASE_TURN_RATE: float = 2.0       # 시선 회전 속도 제한 (rad/s)
 # 5. 불릿타임 및 처치 리셋 설정 (PRD 3.4절)
 # ==========================================
 BULLET_TIME_SCALE: float = 0.1          # 시간 감속 배율 (10% 속도)
-BULLET_TIME_DURATION: float = 1.5       # 실제 현실 시간(Unscaled Time) 기준 지속 시간 (초)
+BULLET_TIME_DURATION: float = 3.0       # 실제 현실 시간(Unscaled Time) 기준 지속 시간 (초)
 
 # ==========================================
 # 6. 타격감 및 연출 설정 (PRD 5.2절)
