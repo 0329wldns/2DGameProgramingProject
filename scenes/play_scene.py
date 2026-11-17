@@ -8,7 +8,7 @@ import pico2d
 from sdl2 import SDL_QUIT, SDL_KEYDOWN, SDLK_ESCAPE, SDLK_F11, SDLK_F1, SDLK_F2
 import game_framework
 import game_world
-from entities.player import Player
+from entities.player import Player, STATE_BULLET_TIME
 from entities.obstacle import Obstacle
 from entities.shuriken import Shuriken
 from entities.enemy import Enemy
@@ -21,7 +21,7 @@ cursor: Cursor | None = None
 trajectory_guide: TrajectoryGuide | None = None
 obstacles: list[Obstacle] = []
 enemies: list[Enemy] = []
-show_trajectory: bool = True
+show_trajectory: bool = False
 
 
 def init() -> None:
@@ -180,6 +180,47 @@ def update(scaled_dt: float, unscaled_dt: float) -> None:
                     break
 
 
+def _draw_bullet_time_hud(p: Player) -> None:
+    """불릿타임 진입 시 화면 상단 중앙에 표시되는 시네마틱 타이머 바 HUD (PRD 3.4절)"""
+    if p.bullet_time_duration <= 0.0:
+        return
+
+    ratio = max(0.0, min(1.0, p.bullet_time_timer / p.bullet_time_duration))
+    cx = config.CANVAS_WIDTH / 2.0
+    cy = config.CANVAS_HEIGHT - 36.0
+    bar_w = 340.0
+    bar_h = 8.0
+
+    left = int(cx - bar_w / 2.0)
+    right = int(cx + bar_w / 2.0)
+    bottom = int(cy - bar_h / 2.0)
+    top = int(cy + bar_h / 2.0)
+
+    # 1. 배경 바 (Dark Slate)
+    pico2d.draw_rectangle(left, bottom, right, top, r=15, g=25, b=38)
+
+    # 2. 잔여 시간 채움 바 (25% 미만 잔여 시 경고 주황색 플래시, 평상시 형광 청록색)
+    fill_w = bar_w * ratio
+    if fill_w > 0:
+        if ratio > 0.25:
+            r, g, b = 0, 255, 255
+        else:
+            r, g, b = 255, 170, 30
+        pico2d.draw_rectangle(left, bottom, int(left + fill_w), top, r=r, g=g, b=b, filled=True)
+
+    # 3. 네온 발광 테두리
+    pico2d.draw_rectangle(left - 2, bottom - 2, right + 2, top + 2, r=0, g=200, b=240)
+
+    # 4. 좌우 날개 브래킷 < [   ] >
+    pico2d.draw_line(left - 12, int(cy), left - 5, int(cy + 6), r=0, g=255, b=255)
+    pico2d.draw_line(left - 12, int(cy), left - 5, int(cy - 6), r=0, g=255, b=255)
+    pico2d.draw_line(right + 12, int(cy), right + 5, int(cy + 6), r=0, g=255, b=255)
+    pico2d.draw_line(right + 12, int(cy), right + 5, int(cy - 6), r=0, g=255, b=255)
+
+    # 5. 하단 중앙 다이아몬드 포인트
+    pico2d.draw_rectangle(int(cx - 3), bottom - 6, int(cx + 3), bottom, r=0, g=255, b=255, filled=True)
+
+
 def draw() -> None:
     """씬 렌더링"""
     pico2d.clear_canvas()
@@ -190,5 +231,10 @@ def draw() -> None:
 
     # 2. 게임 월드 객체 렌더링 (장애물, 플레이어, 적, 수리검, UI)
     game_world.render()
+
+    # 3. 불릿타임 상단 전역 타이머 바 HUD 렌더링 (PRD 3.4절)
+    if player and getattr(player, 'state', None) == STATE_BULLET_TIME:
+        _draw_bullet_time_hud(player)
+
     pico2d.update_canvas()
 
