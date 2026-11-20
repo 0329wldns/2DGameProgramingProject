@@ -9,6 +9,7 @@ import math
 from typing import Any
 import pico2d
 import game_world
+import game_framework
 import config
 from entities.shuriken import STATE_FLYING, STATE_RETURNING, STATE_EMBEDDED
 
@@ -369,3 +370,159 @@ class Enemy:
         if self.is_executable_by_dash:
             marker_y = bar_bottom + bar_h + (24.0 if self.stack_count > 0 else 18.0)
             self._draw_execution_marker(self.x, marker_y)
+
+
+class Shielder(Enemy):
+    """
+    방패병 (Shielder) 아키타입 클래스 (PRD 4절, 5주차).
+    - 전방(시선 방향 180도)으로 견고한 물리 방패를 들고 있는 중갑 탱커 몬스터.
+    - 정면(F · V <= 0)에서 날아오는 수리검을 100% 가드하며 도탄(반사)시킴 (피해 0, 탄창 미귀속).
+    - 수리검이 3회 반사를 모두 채우면 즉시 플레이어에게 복귀.
+    - 오직 벽이나 기둥을 이용한 반사 투척으로 배후(F · V > 0)를 노려야만 일격 처형 마커가 점등됨.
+    - 플레이어를 향해 묵직하게 전진(SHIELDER_MOVE_SPEED)하며 압박함.
+    """
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        dir_x: float = -1.0,
+        dir_y: float = 0.0,
+        target: Any = None,
+        max_hp: float = config.SHIELDER_MAX_HP,
+    ) -> None:
+        super().__init__(x=x, y=y, dir_x=dir_x, dir_y=dir_y, target=target, max_hp=max_hp)
+        self.radius: float = config.SHIELDER_RADIUS
+        self.move_speed: float = config.SHIELDER_MOVE_SPEED
+        self.turn_rate: float = config.SHIELDER_TURN_RATE
+        self.shield_flash_timer: float = 0.0
+        self.enemy_type: str = "shielder"
+
+    def update(self, scaled_dt: float, unscaled_dt: float) -> None:
+        """방패병 상태 업데이트: 시선 회전, 플레이어 추적 전진, 방패 섬광 타이머 감쇄"""
+        if self.shield_flash_timer > 0.0:
+            self.shield_flash_timer = max(0.0, self.shield_flash_timer - unscaled_dt)
+
+        super().update(scaled_dt, unscaled_dt)
+
+        if self.is_dead:
+            return
+
+        # 플레이어 추적 이동 (전진 AI)
+        if self.target is not None and not getattr(self.target, 'is_dead', False):
+            to_x = self.target.x - self.x
+            to_y = self.target.y - self.y
+            dist = math.hypot(to_x, to_y)
+            # 플레이어와 일정 근접 거리 유지 (완전히 겹치지 않도록 정지선 확보)
+            min_stop_dist = self.radius + getattr(self.target, 'radius', 20.0) + 10.0
+            if dist > min_stop_dist:
+                self.x += self.dir_x * self.move_speed * scaled_dt
+                self.y += self.dir_y * self.move_speed * scaled_dt
+
+                # 화면 경계 이탈 방지
+                self.x = max(self.radius, min(config.CANVAS_WIDTH - self.radius, self.x))
+                self.y = max(self.radius, min(config.CANVAS_HEIGHT - self.radius, self.y))
+
+    def resolve_shuriken_collision(self, shuriken: Any) -> bool:
+        """
+        방패병 전용 수리검 충돌 및 방패 방어/도탄 판정 (PRD 4절).
+        1. 배후 피격 (dot > 0.0):
+           - 방패를 우회하여 등 뒤를 찌름 -> 처형 확정(is_executable = True) 및 수리검 귀속.
+        2. 정면 피격 (dot <= 0.0):
+           - 방패에 적중 -> 데미지 0 무효화, 수리검 미귀속, 방패 법선 기준 수리검 반사(도탄)!
+           - 반사 카운트 증가 및 3회 누적 시 자동 복귀.
+        """
+        if self.is_dead or shuriken.state != STATE_FLYING or self.hp <= 0.0:
+            return False
+
+        distance = math.hypot(shuriken.x - self.x, shuriken.y - self.y)
+        if distance > self.radius + shuriken.radius:
+            return False
+
+        dot = self.dir_x * shuriken.dir_x + self.dir_y * shuriken.dir_y
+
+        if dot > 0.0:
+            # === 배후 피격: 방패를 뚫고 등 뒤 적중 (처형 활성화) ===
+            self.is_executable = True
+            self.hp = max(0.0, self.hp - self.shuriken_hit_damage)
+            self.hit_flash_timer = 0.12
+            self.attach_shuriken(shuriken)
+
+            if self.hp <= 0.0:
+                self.is_dead = True
+                self.release_embedded_shurikens()
+
+            return True
+
+        else:
+            # === 정면 피격: 방패 가드 및 도탄 반사 (Shield Ricochet) ===
+            # 방패 표면 법선 벡터 n = (self.dir_x, self.dir_y)
+            # 입사각 = 반사각 반사 벡터: V_reflect = V - 2 * (V · n) * n
+            new_vx = shuriken.dir_x - 2.0 * dot * self.dir_x
+            new_vy = shuriken.dir_y - 2.0 * dot * self.dir_y
+            v_len = math.hypot(new_vx, new_vy)
+            if v_len > 0.0:
+                shuriken.dir_x = new_vx / v_len
+                shuriken.dir_y = new_vy / v_len
+
+            # 수리검이 방패 안쪽으로 파고들지 않도록 방패 앞쪽으로 위치 보정
+            push_dist = self.radius + shuriken.radius + 4.0
+            shuriken.x = self.x + self.dir_x * push_dist
+            shuriken.y = self.y + self.dir_y * push_dist
+
+            # 도탄 카운트 증가 및 상한 도달 시 복귀 처리
+            shuriken.bounce_count += 1
+            if shuriken.bounce_count >= shuriken.max_bounce:
+                shuriken.state = STATE_RETURNING
+
+            # 방패 피격 이펙트 (황금색/백색 불꽃 섬광 및 약한 화면 진동)
+            self.shield_flash_timer = 0.15
+            game_framework.start_screen_shake(4.0, 0.08)
+
+            return True
+
+    def draw(self) -> None:
+        """방패병 렌더링: 본체 히트박스 + 전방 거대 방패(Tower Shield) 시각화"""
+        super().draw()
+
+        if self.is_dead:
+            return
+
+        # 전방 방패 (Convex Tower Shield) 렌더링
+        shield_offset = self.radius + 4.0
+        sx = self.x + self.dir_x * shield_offset
+        sy = self.y + self.dir_y * shield_offset
+
+        # 방패 접선(Tangent) 단위 벡터
+        tx = -self.dir_y
+        ty = self.dir_x
+
+        half_w = self.radius * 1.25  # 방패 날개 길이 (총 폭 약 60px)
+        curv = 5.0                   # 중앙 돌출 곡률
+
+        # 방패 3개 정점: 좌측 팁, 중앙 크레스트, 우측 팁
+        p_left_x = int(sx - tx * half_w - self.dir_x * curv)
+        p_left_y = int(sy - ty * half_w - self.dir_y * curv)
+        p_mid_x  = int(sx + self.dir_x * curv)
+        p_mid_y  = int(sy + self.dir_y * curv)
+        p_right_x = int(sx + tx * half_w - self.dir_x * curv)
+        p_right_y = int(sy + ty * half_w - self.dir_y * curv)
+
+        # 색상 설정 (방패 가드 시 황금색 섬광, 평상시 묵직한 청록/스틸)
+        if self.shield_flash_timer > 0.0:
+            sr, sg, sb = 255, 240, 100
+        else:
+            sr, sg, sb = 0, 220, 255
+
+        # 1. 방패 메인 전면 라인 (두껍게 다중 라인 드로우)
+        for offset in (-1, 0, 1):
+            ox = int(self.dir_x * offset)
+            oy = int(self.dir_y * offset)
+            pico2d.draw_line(p_left_x + ox, p_left_y + oy, p_mid_x + ox, p_mid_y + oy, r=sr, g=sg, b=sb)
+            pico2d.draw_line(p_mid_x + ox, p_mid_y + oy, p_right_x + ox, p_right_y + oy, r=sr, g=sg, b=sb)
+
+        # 2. 방패 양 끝단 가드 브래킷
+        pico2d.draw_rectangle(p_left_x - 2, p_left_y - 2, p_left_x + 2, p_left_y + 2, r=sr, g=sg, b=sb, filled=True)
+        pico2d.draw_rectangle(p_right_x - 2, p_right_y - 2, p_right_x + 2, p_right_y + 2, r=sr, g=sg, b=sb, filled=True)
+
+        # 3. 방패 중앙 보강 코어 리벳
+        pico2d.draw_rectangle(p_mid_x - 2, p_mid_y - 2, p_mid_x + 2, p_mid_y + 2, r=255, g=255, b=255, filled=True)

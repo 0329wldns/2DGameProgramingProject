@@ -45,6 +45,12 @@ ENEMY_BASE_RADIUS: float = 20.0
 ENEMY_BASE_MAX_HP: float = 100.0
 ENEMY_BASE_TURN_RATE: float = 2.0       # 시선 회전 속도 제한 (rad/s)
 
+# 4.1 방패병(Shielder) 아키타입 설정 (PRD 4절, 5주차)
+SHIELDER_RADIUS: float = 24.0           # 거구 탱커 히트박스 반경 (px)
+SHIELDER_MAX_HP: float = 140.0          # 방패병 최대 체력
+SHIELDER_MOVE_SPEED: float = 75.0       # 플레이어 추적 전진 속도 (px/s)
+SHIELDER_TURN_RATE: float = 1.6         # 묵직한 방패 회전 속도 (rad/s)
+
 # ==========================================
 # 5. 불릿타임 및 처치 리셋 설정 (PRD 3.4절)
 # ==========================================

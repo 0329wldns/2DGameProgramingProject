@@ -40,40 +40,40 @@ class Obstacle:
     def top(self) -> float:
         return self.y + self.half_h
 
-    def resolve_player_collision(self, player: Any) -> None:
+    def resolve_entity_collision(self, entity: Any) -> None:
         """
-        플레이어와 기둥 간 AABB-원형 충돌 감지 및 밀어내기 (Sliding)
+        엔티티(플레이어/적)와 기둥 간 AABB-원형 충돌 감지 및 밀어내기 (Sliding)
         """
-        # 기둥 AABB 상에서 플레이어 중심과 가장 가까운 점 (Closest Point)
-        closest_x = max(self.left, min(player.x, self.right))
-        closest_y = max(self.bottom, min(player.y, self.top))
+        closest_x = max(self.left, min(entity.x, self.right))
+        closest_y = max(self.bottom, min(entity.y, self.top))
 
-        diff_x = player.x - closest_x
-        diff_y = player.y - closest_y
+        diff_x = entity.x - closest_x
+        diff_y = entity.y - closest_y
         dist = math.hypot(diff_x, diff_y)
 
-        # 충돌 발생 시
-        if dist < player.radius:
+        if dist < entity.radius:
             if dist > 0.0:
-                # 겹친 깊이만큼 플레이어를 바깥으로 밀어냄
-                overlap = player.radius - dist
-                player.x += (diff_x / dist) * overlap
-                player.y += (diff_y / dist) * overlap
+                overlap = entity.radius - dist
+                entity.x += (diff_x / dist) * overlap
+                entity.y += (diff_y / dist) * overlap
             else:
-                # 플레이어가 완전히 기둥 중심에 파묻힌 예외 케이스 처리
-                overlap_left = player.x - self.left + player.radius
-                overlap_right = self.right - player.x + player.radius
-                overlap_bottom = player.y - self.bottom + player.radius
-                overlap_top = self.top - player.y + player.radius
+                overlap_left = entity.x - self.left + entity.radius
+                overlap_right = self.right - entity.x + entity.radius
+                overlap_bottom = entity.y - self.bottom + entity.radius
+                overlap_top = self.top - entity.y + entity.radius
                 min_overlap = min(overlap_left, overlap_right, overlap_bottom, overlap_top)
                 if min_overlap == overlap_left:
-                    player.x = self.left - player.radius
+                    entity.x = self.left - entity.radius
                 elif min_overlap == overlap_right:
-                    player.x = self.right + player.radius
+                    entity.x = self.right + entity.radius
                 elif min_overlap == overlap_bottom:
-                    player.y = self.bottom - player.radius
+                    entity.y = self.bottom - entity.radius
                 else:
-                    player.y = self.top + player.radius
+                    entity.y = self.top + entity.radius
+
+    def resolve_player_collision(self, player: Any) -> None:
+        """기존 호환성 유지를 위한 별칭 메서드"""
+        self.resolve_entity_collision(player)
 
     def resolve_shuriken_collision(self, shuriken: Any) -> bool:
         """
