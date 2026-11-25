@@ -53,12 +53,6 @@ def init() -> None:
         game_world.add_object(obs, game_world.LAYER_OBSTACLE)
         return obs
 
-    def spawn_enemy(x: float, y: float, hp: float = 100.0, dir_x: float = -1.0, dir_y: float = 0.0) -> Enemy:
-        e = Enemy(x=x, y=y, dir_x=dir_x, dir_y=dir_y, target=player, max_hp=hp)
-        enemies.append(e)
-        game_world.add_object(e, game_world.LAYER_ENEMY)
-        return e
-
     def spawn_shielder(x: float, y: float, dir_x: float = -1.0, dir_y: float = 0.0) -> Shielder:
         s = Shielder(x=x, y=y, dir_x=dir_x, dir_y=dir_y, target=player)
         enemies.append(s)
@@ -72,24 +66,21 @@ def init() -> None:
         return s
 
     # 1. 전술적 반사용 기둥(장애물) 배치
-    spawn_obstacle(x=750.0, y=540.0, w=80.0, h=340.0)   # 중앙 좌측 기둥 (적 전방 엄폐)
-    spawn_obstacle(x=1450.0, y=540.0, w=80.0, h=240.0)  # 중앙 우측 기둥 (외곽 반사 지원)
+    # - 중앙 엄폐 기둥: 직사 사선을 차단하여 상하 외벽 반사를 유도하고 저격 레이저를 엄폐
+    spawn_obstacle(x=720.0, y=540.0, w=80.0, h=320.0)
+    # - 상단 전술 반사 기둥: 천장 및 상단 외벽 도탄 궤적으로 배후 침투 유도
+    spawn_obstacle(x=1260.0, y=800.0, w=180.0, h=60.0)
+    # - 하단 전술 반사 기둥: 바닥 및 하단 외벽 도탄 궤적으로 배후 침투 유도
+    spawn_obstacle(x=1260.0, y=280.0, w=180.0, h=60.0)
 
-    # 2. 전술 포메이션 적 배치 (방패병 전위 엄폐 + 저격병 후방 화력 지원 + 연쇄 돌진 징검다리)
-    # [적 1] 전위 탱커 방패병(Shielder): 저격병 앞을 가로막으며 가드 (HP 140)
-    spawn_shielder(x=1000.0, y=540.0, dir_x=-1.0, dir_y=0.0)
+    # 2. 구현된 적(방패병 & 저격병) 2개 조 전술 포메이션 배치 (더미 적 완전 제거)
+    # [상단 조] 전위 방패병 + 후방 저격병
+    spawn_shielder(x=1040.0, y=680.0, dir_x=-1.0, dir_y=0.0)
+    spawn_sniper(x=1520.0, y=780.0, dir_x=-1.0, dir_y=0.0)
 
-    # [적 2] 후방 화력 저격병(Sniper): 붉은 조준선 차지 후 저격 탄환 발사 (HP 60)
-    spawn_sniper(x=1500.0, y=540.0, dir_x=-1.0, dir_y=0.0)
-
-    # [적 3] 2차 연쇄 돌진용 상단 징검다리 (HP 50)
-    spawn_enemy(x=1200.0, y=780.0, hp=50.0, dir_x=-1.0, dir_y=-0.5)
-
-    # [적 4] 3차 연쇄 돌진용 우측 외곽 징검다리 (HP 50)
-    spawn_enemy(x=1700.0, y=540.0, hp=50.0, dir_x=-1.0, dir_y=0.0)
-
-    # [적 5] 4차 연쇄 돌진용 하단 징검다리 (HP 50)
-    spawn_enemy(x=1200.0, y=300.0, hp=50.0, dir_x=-1.0, dir_y=0.5)
+    # [하단 조] 전위 방패병 + 후방 저격병
+    spawn_shielder(x=1040.0, y=400.0, dir_x=-1.0, dir_y=0.0)
+    spawn_sniper(x=1520.0, y=300.0, dir_x=-1.0, dir_y=0.0)
 
 
 def finish() -> None:
