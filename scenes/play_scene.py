@@ -8,7 +8,7 @@ import pico2d
 from sdl2 import SDL_QUIT, SDL_KEYDOWN, SDLK_ESCAPE, SDLK_F11, SDLK_F1, SDLK_F2
 import game_framework
 import game_world
-from entities.player import Player, STATE_BULLET_TIME
+from entities.player import Player, STATE_BULLET_TIME, STATE_DASH
 from entities.obstacle import Obstacle
 from entities.shuriken import Shuriken
 from entities.enemy import Enemy, Shielder, Sniper, SniperBullet
@@ -174,6 +174,56 @@ def update(scaled_dt: float, unscaled_dt: float) -> None:
         for enemy in enemies:
             if not enemy.is_dead:
                 obs.resolve_entity_collision(enemy)
+
+    # 2.5. 엔티티 상호 충돌 및 겹침 방지 (Circle-Circle Separation)
+    # (1) 적 vs 적 상호 밀어내기
+    enemy_count = len(enemies)
+    for i in range(enemy_count):
+        e1 = enemies[i]
+        if getattr(e1, 'is_dead', False) or getattr(e1, 'hp', 0.0) <= 0.0:
+            continue
+        for j in range(i + 1, enemy_count):
+            e2 = enemies[j]
+            if getattr(e2, 'is_dead', False) or getattr(e2, 'hp', 0.0) <= 0.0:
+                continue
+            dx = e2.x - e1.x
+            dy = e2.y - e1.y
+            dist = math.hypot(dx, dy)
+            min_dist = e1.radius + e2.radius
+            if dist < min_dist:
+                if dist > 0.001:
+                    overlap = (min_dist - dist) * 0.5
+                    nx = dx / dist
+                    ny = dy / dist
+                    e1.x -= nx * overlap
+                    e1.y -= ny * overlap
+                    e2.x += nx * overlap
+                    e2.y += ny * overlap
+                else:
+                    e1.x -= 1.0
+                    e2.x += 1.0
+
+    # (2) 플레이어 vs 적 상호 밀어내기 (일섬 관통 돌진 STATE_DASH 중에는 관통이므로 제외)
+    if player and getattr(player, 'state', None) != STATE_DASH:
+        for enemy in enemies:
+            if getattr(enemy, 'is_dead', False) or getattr(enemy, 'hp', 0.0) <= 0.0:
+                continue
+            dx = enemy.x - player.x
+            dy = enemy.y - player.y
+            dist = math.hypot(dx, dy)
+            min_dist = player.radius + enemy.radius
+            if dist < min_dist:
+                if dist > 0.001:
+                    overlap = min_dist - dist
+                    nx = dx / dist
+                    ny = dy / dist
+                    player.x -= nx * overlap * 0.5
+                    player.y -= ny * overlap * 0.5
+                    enemy.x += nx * overlap * 0.5
+                    enemy.y += ny * overlap * 0.5
+                else:
+                    player.x -= 1.0
+                    enemy.x += 1.0
 
     # 3. 투사체(수리검 및 저격 탄환) vs 장애물/플레이어/적 충돌 판정
     projectiles = game_world.world[game_world.LAYER_PROJECTILE]

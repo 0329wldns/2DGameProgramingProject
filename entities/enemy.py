@@ -426,8 +426,7 @@ class Shielder(Enemy):
                     protected_ally = enemy
 
             if protected_ally is not None:
-                # === 아군 보호 인터셉트 가드 모드 ===
-                # 플레이어와 아군 사이의 직선 경로 상에서 아군 전방 약 110px 지점을 목표 가드 포인트로 계산
+                # === 아군 보호 인터셉트 가드 모드 (다중 방패병 V자 부채꼴 슬롯 진형) ===
                 to_p_x = self.target.x - protected_ally.x
                 to_p_y = self.target.y - protected_ally.y
                 p_dist = math.hypot(to_p_x, to_p_y)
@@ -435,9 +434,36 @@ class Shielder(Enemy):
                 if p_dist > 1.0:
                     dir_to_p_x = to_p_x / p_dist
                     dir_to_p_y = to_p_y / p_dist
+
+                    # 동일 아군 보호 시 겹침을 방지하는 다중 방패병 호위 슬롯 계산
+                    cohort = [
+                        e for e in game_world.world[game_world.LAYER_ENEMY]
+                        if getattr(e, 'enemy_type', '') == 'shielder' and not getattr(e, 'is_dead', False)
+                    ]
+                    cohort.sort(key=lambda s: id(s))
+                    total_cohort = len(cohort)
+                    my_idx = cohort.index(self) if self in cohort else 0
+
+                    # 접선(Tangent) 단위 벡터: 시선 기준 좌/우 축
+                    tx = -dir_to_p_y
+                    ty = dir_to_p_x
+
+                    if total_cohort <= 1:
+                        slot_offset = 0.0
+                    elif total_cohort == 2:
+                        # 2기 호위 시: 좌측 날개(-36px) 및 우측 날개(+36px)로 분할
+                        slot_offset = -36.0 if my_idx == 0 else 36.0
+                    else:
+                        slot_offset = (my_idx - (total_cohort - 1) / 2.0) * 44.0
+
                     guard_offset = min(110.0, p_dist * 0.45)
-                    goal_x = protected_ally.x + dir_to_p_x * guard_offset
-                    goal_y = protected_ally.y + dir_to_p_y * guard_offset
+                    center_x = protected_ally.x + dir_to_p_x * guard_offset
+                    center_y = protected_ally.y + dir_to_p_y * guard_offset
+
+                    # 양 날개는 중앙보다 살짝 뒤로 물러나 부채꼴 V자(Arc) 형성
+                    arc_pullback = 8.0 if abs(slot_offset) > 0.0 else 0.0
+                    goal_x = center_x + tx * slot_offset - dir_to_p_x * arc_pullback
+                    goal_y = center_y + ty * slot_offset - dir_to_p_y * arc_pullback
                 else:
                     goal_x, goal_y = self.x, self.y
 
