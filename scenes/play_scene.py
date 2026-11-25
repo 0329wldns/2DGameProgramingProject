@@ -4,6 +4,7 @@ play_scene.py
 """
 
 from typing import Any
+import math
 import pico2d
 from sdl2 import SDL_QUIT, SDL_KEYDOWN, SDLK_ESCAPE, SDLK_F11, SDLK_F1, SDLK_F2
 import game_framework
