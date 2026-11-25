@@ -30,6 +30,11 @@ PLAYER_DASH_DISTANCE: float = 400.0     # 일섬 관통 고정 거리 (px)
 PLAYER_DASH_STACK_DAMAGE: float = 40.0  # 일반 스택 소모 시 1스택당 데미지
 PLAYER_DASH_PENETRATE_RATIO: float = 0.5 # 관통 궤적 적들에 대한 데미지 비율 (50%)
 
+# 스마트 에임 어시스트 및 연쇄 처형 (Hyper Chain Execution) 설정
+PLAYER_AIM_ASSIST_RADIUS: float = 160.0 # 스마트 에임 어시스트 자석 유도 반경 (px)
+CHAIN_DASH_KILL_REWARD_TIME: float = 1.2 # 연쇄 처형 성공 시 불릿타임 시간 연장 (초)
+CHAIN_DASH_DAMAGE: float = 200.0        # 불릿타임 연쇄 일섬 즉사급 처형 데미지
+
 # ==========================================
 # 3. 혼령 수리검(Shuriken) 설정 (PRD 3.1절)
 # ==========================================

@@ -370,11 +370,13 @@ class Enemy:
 
         # 2. 마우스 커서 호버 시 타겟 하이라이트 (PRD 5.2절)
         if self.is_hovered:
-            if self.is_dash_target:
-                # 돌진 가능 타겟: 청록색 발광 이중 테두리 + 코너 브래킷 [ ] + 관통 Ray Line
-                pico2d.draw_rectangle(left - 2, bottom - 2, right + 2, top + 2, r=0, g=255, b=255)
-                self._draw_targeting_brackets(self.x, self.y, offset=int(self.radius + 7.0), blen=8, r=0, g=255, b=255)
-                pico2d.draw_rectangle(left - 7, bottom - 7, right + 7, top + 7, r=0, g=255, b=255)
+            is_bt = (self.target is not None and getattr(self.target, 'state', None) == 3) # 3 == STATE_BULLET_TIME
+            if self.is_dash_target or is_bt:
+                # 돌진 가능 타겟 / 불릿타임 연쇄 타겟: 청록색(일반) or 골드(불릿타임) 발광 이중 테두리 + 코너 브래킷 [ ] + 관통 Ray Line
+                br, bg, bb = (255, 220, 50) if is_bt else (0, 255, 255)
+                pico2d.draw_rectangle(left - 2, bottom - 2, right + 2, top + 2, r=br, g=bg, b=bb)
+                self._draw_targeting_brackets(self.x, self.y, offset=int(self.radius + 7.0), blen=8, r=br, g=bg, b=bb)
+                pico2d.draw_rectangle(left - 7, bottom - 7, right + 7, top + 7, r=br, g=bg, b=bb)
                 self._draw_dash_aim_preview()
             else:
                 # 돌진 불가능(수리검 미부착): 은은한 백색/회색 타겟 브래킷 (조준 호버 인지 피드백)

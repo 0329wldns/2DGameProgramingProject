@@ -65,6 +65,8 @@ class Player:
         self.bullet_time_duration: float = config.BULLET_TIME_DURATION
         self.bullet_time_timer: float = 0.0
         self.dash_killed_any: bool = False      # 이번 돌진(최초/연쇄)에서 적 처치 여부
+        self.in_bullet_time_dash: bool = False  # 불릿타임 중 연쇄 돌진 진행 중 플래그
+        self.chain_kill_count: int = 0          # 불릿타임 내 누적 처치 수
 
         # 청록색 궤적 잔상 관리 (PRD 5.2절)
         # 각 잔상: [x, y, timer, max_timer, dir_x, dir_y]
@@ -155,25 +157,44 @@ class Player:
                 else:
                     self.try_trigger_dash()
 
+    def find_aim_assist_target(self, allow_all_alive: bool = False) -> Any:
+        """
+        마우스 커서 위치(mouse_x, mouse_y)를 기준으로 가장 가까운 유효 돌진 타겟을 탐색 (스마트 에임 어시스트).
+        - allow_all_alive == False (일반 상태): 수리검이 꽂혀있거나 배후 처형 가능(is_dash_target == True)한 적만 탐색.
+        - allow_all_alive == True (불릿타임 상태): 생존해 있는 모든 적(not is_dead and hp > 0)을 연쇄 처형 대상으로 탐색.
+        - 반환값: 유효 반경(config.PLAYER_AIM_ASSIST_RADIUS) 내 최단 거리 적 엔티티 (없으면 None).
+        """
+        enemies = game_world.world[game_world.LAYER_ENEMY]
+        best_target = None
+        min_dist = float('inf')
+        assist_radius = getattr(config, 'PLAYER_AIM_ASSIST_RADIUS', 160.0)
+
+        for enemy in enemies:
+            if getattr(enemy, 'is_dead', False) or getattr(enemy, 'hp', 0.0) <= 0.0:
+                continue
+
+            # 일반 상태에서는 수리검 표식 또는 처형 상태인 적만 유효
+            if not allow_all_alive and not getattr(enemy, 'is_dash_target', False):
+                continue
+
+            dist = math.hypot(self.mouse_x - enemy.x, self.mouse_y - enemy.y)
+            if dist <= (enemy.radius + assist_radius) and dist < min_dist:
+                min_dist = dist
+                best_target = enemy
+
+        return best_target
+
     def try_trigger_dash(self) -> bool:
         """
-        우클릭 시 마우스 오버된 수리검 꽂힌 적(스택 보유 또는 처형 가능)을 찾아 돌진 발동
+        우클릭 시 스마트 에임 어시스트로 표식 적을 찾아 최초 돌진(일섬) 발동
         """
         if self.state in (STATE_DASH, STATE_ROLL):
             return False
 
-        enemies = game_world.world[game_world.LAYER_ENEMY]
-        for enemy in enemies:
-            if getattr(enemy, 'is_dead', False) or getattr(enemy, 'hp', 0.0) <= 0.0:
-                continue
-            dist = math.hypot(self.mouse_x - enemy.x, self.mouse_y - enemy.y)
-            if dist <= (enemy.radius + 18.0):
-                # 수리검 표식이 꽂혀있거나 배후 처형 가능 상태인 적에게만 돌진 허용
-                has_shurikens = len(getattr(enemy, 'embedded_shurikens', [])) > 0
-                is_executable = getattr(enemy, 'is_executable', False)
-                if has_shurikens or is_executable:
-                    self.start_dash(enemy)
-                    return True
+        target = self.find_aim_assist_target(allow_all_alive=False)
+        if target is not None:
+            self.start_dash(target)
+            return True
         return False
 
     def start_dash(self, target: Any) -> None:
@@ -292,7 +313,15 @@ class Player:
                         enemy.release_embedded_shurikens()
 
         if self.dash_timer <= 0.0:
-            if self.dash_killed_any:
+            if getattr(self, 'in_bullet_time_dash', False):
+                # 불릿타임 중 연쇄 돌진 완료: 불릿타임 시간 남아있으면 불릿타임 복귀!
+                if self.bullet_time_timer > 0.0:
+                    self.state = STATE_BULLET_TIME
+                    game_framework.set_time_scale(config.BULLET_TIME_SCALE)
+                else:
+                    self.exit_bullet_time()
+                self.in_bullet_time_dash = False
+            elif self.dash_killed_any:
                 self.enter_bullet_time()
             else:
                 self.state = STATE_NORMAL
@@ -302,65 +331,122 @@ class Player:
         처치 리셋 발동 및 불릿타임 상태 진입 (PRD 3.4절)
         - FSM 상태를 STATE_BULLET_TIME으로 전이
         - 전역 시간 배율을 BULLET_TIME_SCALE (0.1)로 감속
-        - 현실 시간(Unscaled Time) 기준 타이머를 BULLET_TIME_DURATION (0.8초)로 설정
-        - dash_killed_any 초기화
+        - 현실 시간(Unscaled Time) 기준 타이머를 BULLET_TIME_DURATION으로 설정
+        - dash_killed_any 초기화 및 체인 킬 카운트 1 시작
         """
         self.state = STATE_BULLET_TIME
         self.bullet_time_timer = self.bullet_time_duration
         self.dash_killed_any = False
+        self.chain_kill_count = 1
         game_framework.set_time_scale(config.BULLET_TIME_SCALE)
 
     def exit_bullet_time(self) -> None:
         """불릿타임 만료 시 일반 상태 복귀 및 시간 배율 정상화(1.0)"""
         self.state = STATE_NORMAL
         self.bullet_time_timer = 0.0
+        self.in_bullet_time_dash = False
         game_framework.set_time_scale(1.0)
 
     def update_bullet_time(self, unscaled_dt: float) -> None:
-        """
-        # TODO(Copilot): 불릿타임 실제 시간 타이머 차감 및 만료 처리
-        # PRD 3.4절 명세:
-        # 1. self.bullet_time_timer -= unscaled_dt (현실 시간 기준 0.8초)
-        # 2. 타이머가 0.0 이하가 되면 self.exit_bullet_time() 호출
-        """
+        """불릿타임 실제 시간 타이머 차감 및 만료 처리"""
         self.bullet_time_timer -= unscaled_dt
         if self.bullet_time_timer <= 0.0:
             self.exit_bullet_time()
 
     def start_chain_dash(self) -> None:
         """
-        # TODO(Copilot): 불릿타임 중 연쇄 돌진(Chain Dash) 발동
-        # PRD 3.4절 명세:
-        # 1. 시간 배율 정상화: game_framework.set_time_scale(1.0)
-        # 2. 현재 마우스 커서 방향 벡터 (mouse_x - x, mouse_y - y) 계산 및 정규화
-        #    - 거리(math.hypot) > 0.0 이면 정규화하여 self.dash_dir_x, self.dash_dir_y 설정
-        #    - 0.0 인 경우 기본 (1.0, 0.0)
-        # 3. 상태 및 파라미터 초기화:
-        #    - self.state = STATE_DASH
-        #    - self.dash_timer = self.dash_duration
-        #    - self.dash_hit_enemies.clear()
-        #    - self.dash_killed_any = False
-        #    - self.dash_base_damage가 0.0 이하인 경우 기본값 config.ENEMY_BASE_MAX_HP로 보정
+        불릿타임 중 연쇄 돌진/처형 (Hyper Chain Execution) 발동.
+        1. 스마트 에임 어시스트로 마우스 커서 부근(160px)의 살아있는 적을 자동 락온 타겟팅.
+        2. 타겟 적이 존재하는 경우:
+           - 플레이어 -> 타겟 방향 벡터 및 관성 방향 설정
+           - 해당 적으로 즉시 순간이동
+           - 방패병 정면 가드 판정 (정면이면 가드 방어, 배후면 처형)
+           - 일반 적(추격병, 저격병 등): 즉시 100% 일격 처형! (hp = 0, is_dead = True)
+           - 적에 꽂혀있던 수리검 전량 회수 (탄창 복구)
+           - 불릿타임 타이머 연장 (+1.2초) 및 0.1배속 유지
+           - 짧은 일섬 관통 이동(STATE_DASH) 후 불릿타임 복귀
+        3. 타겟이 없는 빈 공간 클릭 시:
+           - 커서 방향으로 맹목 돌진하며 불릿타임 해제(정상 시간 1.0 복귀)
         """
-        game_framework.set_time_scale(1.0)
+        target = self.find_aim_assist_target(allow_all_alive=True)
 
-        to_x = self.mouse_x - self.x
-        to_y = self.mouse_y - self.y
-        dist = math.hypot(to_x, to_y)
-        if dist > 0.0:
-            self.dash_dir_x = to_x / dist
-            self.dash_dir_y = to_y / dist
+        if target is not None:
+            to_x = target.x - self.x
+            to_y = target.y - self.y
+            dist = math.hypot(to_x, to_y)
+            if dist > 0.0:
+                self.dash_dir_x = to_x / dist
+                self.dash_dir_y = to_y / dist
+            else:
+                self.dash_dir_x, self.dash_dir_y = 1.0, 0.0
+
+            # 방패병 정면 방어 판정
+            is_shielder = getattr(target, 'enemy_type', '') == 'shielder'
+            guarded = False
+            if is_shielder:
+                dot = target.dir_x * self.dash_dir_x + target.dir_y * self.dash_dir_y
+                if dot <= 0.0:
+                    guarded = True
+
+            if guarded:
+                # 방패병 정면에 막힘: 데미지 0, 튕김 이펙트, 불릿타임 유지
+                target.shield_flash_timer = 0.2
+                game_framework.start_hit_stop(0.08)
+                game_framework.start_screen_shake(8.0, 0.1)
+                self.x = target.x - self.dash_dir_x * (target.radius + self.radius + 6.0)
+                self.y = target.y - self.dash_dir_y * (target.radius + self.radius + 6.0)
+                self.dash_killed_any = False
+            else:
+                # 순간이동 및 일격 처형
+                self.x = target.x
+                self.y = target.y
+
+                target.retrieve_all_shurikens()
+                target.hp = 0.0
+                target.is_dead = True
+                self.dash_killed_any = True
+                self.chain_kill_count += 1
+
+                # 불릿타임 시간 충전
+                reward_time = getattr(config, 'CHAIN_DASH_KILL_REWARD_TIME', 1.2)
+                self.bullet_time_timer = min(self.bullet_time_duration, self.bullet_time_timer + reward_time)
+
+                # 타격감 연출
+                game_framework.start_hit_stop(config.HIT_STOP_DURATION)
+                game_framework.start_screen_shake(config.SCREEN_SHAKE_INTENSITY, config.SCREEN_SHAKE_DURATION)
+                if hasattr(target, 'hit_flash_timer'):
+                    target.hit_flash_timer = 0.16
+
+            self.dash_base_damage = getattr(config, 'CHAIN_DASH_DAMAGE', 200.0)
+            self.dash_hit_enemies = {id(target)}
+            self.in_bullet_time_dash = True
+            self.dash_timer = self.dash_duration
+            self.state = STATE_DASH
+            self.afterimage_spawn_timer = 0.0
+            self.afterimages.append([self.x, self.y, config.AFTERIMAGE_LIFETIME, config.AFTERIMAGE_LIFETIME, self.dash_dir_x, self.dash_dir_y])
+
         else:
-            self.dash_dir_x, self.dash_dir_y = 1.0, 0.0
+            # 빈 공간 우클릭: 커서 방향으로 돌진하며 불릿타임 탈출
+            self.exit_bullet_time()
 
-        self.state = STATE_DASH
-        self.dash_timer = self.dash_duration
-        self.dash_hit_enemies.clear()
-        self.dash_killed_any = False
-        self.afterimage_spawn_timer = 0.0
-        self.afterimages.append([self.x, self.y, config.AFTERIMAGE_LIFETIME, config.AFTERIMAGE_LIFETIME, self.dash_dir_x, self.dash_dir_y])
-        if self.dash_base_damage <= 0.0:
-            self.dash_base_damage = config.ENEMY_BASE_MAX_HP
+            to_x = self.mouse_x - self.x
+            to_y = self.mouse_y - self.y
+            dist = math.hypot(to_x, to_y)
+            if dist > 0.0:
+                self.dash_dir_x = to_x / dist
+                self.dash_dir_y = to_y / dist
+            else:
+                self.dash_dir_x, self.dash_dir_y = 1.0, 0.0
+
+            self.state = STATE_DASH
+            self.dash_timer = self.dash_duration
+            self.dash_hit_enemies.clear()
+            self.dash_killed_any = False
+            self.in_bullet_time_dash = False
+            self.afterimage_spawn_timer = 0.0
+            self.afterimages.append([self.x, self.y, config.AFTERIMAGE_LIFETIME, config.AFTERIMAGE_LIFETIME, self.dash_dir_x, self.dash_dir_y])
+            if self.dash_base_damage <= 0.0:
+                self.dash_base_damage = config.ENEMY_BASE_MAX_HP
 
     def start_roll(self) -> None:
         """
@@ -472,7 +558,9 @@ class Player:
 
         # FSM 상태별 이동 처리
         if self.state == STATE_DASH:
-            self.update_dash(scaled_dt)
+            # 불릿타임 중 연쇄 일섬은 적들이 0.1배속인 상태에서 플레이어는 실시간 속도로 베고 지나가도록 unscaled_dt 적용
+            dash_dt = unscaled_dt if getattr(self, 'in_bullet_time_dash', False) else scaled_dt
+            self.update_dash(dash_dt)
         elif self.state == STATE_ROLL:
             self.update_roll(scaled_dt)
         elif self.state == STATE_BULLET_TIME:
@@ -492,21 +580,31 @@ class Player:
             pico2d.draw_rectangle(int(ix - rx), int(iy - ry), int(ix + rx), int(iy + ry), r=0, g=255, b=255, a=alpha)
             pico2d.draw_line(int(ix - dir_x * 30.0 * progress), int(iy - dir_y * 30.0 * progress), int(ix), int(iy), r=0, g=255, b=255, a=alpha)
 
-        # 2. 불릿타임 조준선 및 착지 지점 시각화 (PRD 3.4 & 5.2절)
+        # 2. 불릿타임 스마트 락온 조준선 및 착지 지점 시각화 (PRD 3.4 & 5.2절)
         if self.state == STATE_BULLET_TIME:
-            to_x = self.mouse_x - self.x
-            to_y = self.mouse_y - self.y
-            dist = math.hypot(to_x, to_y)
-            if dist > 0.0:
-                dir_x = to_x / dist
-                dir_y = to_y / dist
+            target = self.find_aim_assist_target(allow_all_alive=True)
+            if target is not None:
+                # 스마트 락온된 연쇄 처형 대상 표시선 (Bright Neon Cyan -> Gold)
+                pico2d.draw_line(int(self.x), int(self.y), int(target.x), int(target.y), r=255, g=220, b=50)
+                # 타겟 주변 네온 다이아몬드 락온 브래킷
+                tr = int(target.radius + 10.0)
+                pico2d.draw_rectangle(int(target.x - tr), int(target.y - tr), int(target.x + tr), int(target.y + tr), r=255, g=220, b=50)
+                pico2d.draw_line(int(target.x - tr - 4), int(target.y), int(target.x + tr + 4), int(target.y), r=255, g=220, b=50)
+                pico2d.draw_line(int(target.x), int(target.y - tr - 4), int(target.x), int(target.y + tr + 4), r=255, g=220, b=50)
             else:
-                dir_x, dir_y = 1.0, 0.0
+                to_x = self.mouse_x - self.x
+                to_y = self.mouse_y - self.y
+                dist = math.hypot(to_x, to_y)
+                if dist > 0.0:
+                    dir_x = to_x / dist
+                    dir_y = to_y / dist
+                else:
+                    dir_x, dir_y = 1.0, 0.0
 
-            end_x = int(self.x + dir_x * self.dash_distance)
-            end_y = int(self.y + dir_y * self.dash_distance)
-            pico2d.draw_line(int(self.x), int(self.y), end_x, end_y, r=0, g=255, b=255)
-            pico2d.draw_rectangle(end_x - 4, end_y - 4, end_x + 4, end_y + 4, r=0, g=255, b=255, filled=True)
+                end_x = int(self.x + dir_x * self.dash_distance)
+                end_y = int(self.y + dir_y * self.dash_distance)
+                pico2d.draw_line(int(self.x), int(self.y), end_x, end_y, r=0, g=255, b=255)
+                pico2d.draw_rectangle(end_x - 4, end_y - 4, end_x + 4, end_y + 4, r=0, g=255, b=255, filled=True)
         elif self.state == STATE_DASH:
             # 일섬 관통 궤적 연출 (청록색 발광 삼중선)
             tail_x = int(self.x - self.dash_dir_x * 70.0)

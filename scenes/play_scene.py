@@ -160,21 +160,15 @@ def update(scaled_dt: float, unscaled_dt: float) -> None:
     # 1. 모든 엔티티 위치 및 상태 갱신
     game_world.update(scaled_dt, unscaled_dt)
 
-    # 2. 적 호버(Hover) 검사 (커서가 적 위에 올라갔을 때 해당 적 타겟 하이라이트 활성화)
-    best_enemy = None
-    min_dist = float('inf')
+    # 2. 적 호버(Hover) 검사 (스마트 에임 어시스트 타겟과 1:1 동기화)
     for enemy in enemies:
         enemy.is_hovered = False
-        if cursor and not enemy.is_dead and enemy.hp > 0.0:
-            import math
-            dist = math.hypot(cursor.x - enemy.x, cursor.y - enemy.y)
-            # 플레이어 돌진 타겟팅 인식 반경(radius + 18.0)과 동일하게 판정
-            if dist <= (enemy.radius + 18.0) and dist < min_dist:
-                min_dist = dist
-                best_enemy = enemy
 
-    if best_enemy is not None:
-        best_enemy.is_hovered = True
+    if player:
+        is_bt = (getattr(player, 'state', None) == STATE_BULLET_TIME)
+        best_target = player.find_aim_assist_target(allow_all_alive=is_bt)
+        if best_target is not None:
+            best_target.is_hovered = True
 
     # 2. 플레이어 및 적 vs 장애물 충돌 보정 (Sliding)
     for obs in obstacles:
