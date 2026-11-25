@@ -14,6 +14,48 @@ import config
 from entities.shuriken import STATE_FLYING, STATE_RETURNING, STATE_EMBEDDED
 
 
+def segment_intersects_aabb(
+    x1: float, y1: float, x2: float, y2: float,
+    left: float, right: float, bottom: float, top: float
+) -> tuple[bool, float]:
+    """
+    선분 (x1, y1) -> (x2, y2)와 AABB [left, right, bottom, top] 간의 교차 검사 (Liang-Barsky / Slab).
+    교차 시 (True, t_enter), 비교차 시 (False, 0.0) 반환.
+    t_enter는 P(t) = P1 + t * (P2 - P1) 에서의 매개변수 t (0.0 <= t <= 1.0).
+    """
+    dx = x2 - x1
+    dy = y2 - y1
+
+    t0 = 0.0
+    t1 = 1.0
+
+    if abs(dx) < 1e-9:
+        if x1 < left or x1 > right:
+            return False, 0.0
+    else:
+        inv_dx = 1.0 / dx
+        tx1 = (left - x1) * inv_dx
+        tx2 = (right - x1) * inv_dx
+        t0 = max(t0, min(tx1, tx2))
+        t1 = min(t1, max(tx1, tx2))
+        if t0 > t1:
+            return False, 0.0
+
+    if abs(dy) < 1e-9:
+        if y1 < bottom or y1 > top:
+            return False, 0.0
+    else:
+        inv_dy = 1.0 / dy
+        ty1 = (bottom - y1) * inv_dy
+        ty2 = (top - y1) * inv_dy
+        t0 = max(t0, min(ty1, ty2))
+        t1 = min(t1, max(ty1, ty2))
+        if t0 > t1:
+            return False, 0.0
+
+    return True, t0
+
+
 class Enemy:
     def __init__(
         self,
@@ -80,16 +122,20 @@ class Enemy:
         """돌진(Dash)이 가능한 상태(수리검 표식이 꽂혀 있거나 배후 처형 가능 상태)인지 확인"""
         return (len(self.embedded_shurikens) > 0 or self.is_executable) and not self.is_dead and self.hp > 0.0
 
-    def update_facing(self, dt: float) -> None:
+    def update_facing(self, dt: float, target_x: float = None, target_y: float = None) -> None:
         """
-        타겟(플레이어) 방향으로 시선 벡터 F를 회전하되,
+        타겟(플레이어 또는 지정 좌표) 방향으로 시선 벡터 F를 회전하되,
         초당 최대 회전각(turn_rate * dt)으로 회전 속도를 제한합니다.
         """
-        if self.target is None:
-            return
+        if target_x is None or target_y is None:
+            if self.target is None:
+                return
+            to_x = self.target.x - self.x
+            to_y = self.target.y - self.y
+        else:
+            to_x = target_x - self.x
+            to_y = target_y - self.y
 
-        to_x = self.target.x - self.x
-        to_y = self.target.y - self.y
         if math.hypot(to_x, to_y) <= 1e-5:
             return
 
@@ -852,8 +898,98 @@ class Chaser(Enemy):
         self.state_timer: float = 0.0
         self.attack_hit_done: bool = False
 
+    def get_navigation_target(self) -> tuple[float, float, Any]:
+        """
+        장애물 회피를 고려한 내비게이션 목표 지점 (nav_x, nav_y) 및 가로막는 장애물(blocking_obs)을 반환합니다.
+        - 플레이어와 직접 사선(Line of Sight) 상에 장애물이 없는 경우: (player.x, player.y, None)
+        - 장애물이 사선을 가로막는 경우: 해당 장애물의 최적 모서리 우회 웨이포인트(Corner Waypoint) 및 장애물 객체 반환
+        """
+        if self.target is None or getattr(self.target, 'is_dead', False):
+            return self.x, self.y, None
+
+        tx = self.target.x
+        ty = self.target.y
+
+        # 1. 플레이어를 향한 직접 사선(Line of Sight) 상에 가로막는 장애물 검사
+        blocking_obs = None
+        min_t = float('inf')
+        los_margin = 8.0  # 사선 여유 간격
+
+        for obs in game_world.world[game_world.LAYER_OBSTACLE]:
+            hit, t = segment_intersects_aabb(
+                self.x, self.y, tx, ty,
+                obs.left - los_margin, obs.right + los_margin,
+                obs.bottom - los_margin, obs.top + los_margin
+            )
+            if hit and 0.0 <= t < min_t:
+                min_t = t
+                blocking_obs = obs
+
+        # 사선에 장애물이 없다면 플레이어를 직접 타겟으로 반환
+        if blocking_obs is None:
+            return tx, ty, None
+
+        # 2. 장애물이 사선을 가로막고 있다면, 장애물 모서리 우회 웨이포인트(Corner Waypoint) 산출
+        obs = blocking_obs
+        clearance = self.radius + 24.0  # 기둥 모서리 여유 간격 (충돌 반경 고려)
+
+        w_tl = (obs.left - clearance, obs.top + clearance)
+        w_tr = (obs.right + clearance, obs.top + clearance)
+        w_bl = (obs.left - clearance, obs.bottom - clearance)
+        w_br = (obs.right + clearance, obs.bottom - clearance)
+
+        # 기둥 형태(종형 기둥 vs 횡형 벽)에 따른 우회 경로 후보 설정
+        if obs.height >= obs.width:
+            # 수직 기둥: 상단 우회(Upper) vs 하단 우회(Lower)
+            if self.x >= obs.x:
+                upper_near, upper_far = w_tr, w_tl
+                lower_near, lower_far = w_br, w_bl
+            else:
+                upper_near, upper_far = w_tl, w_tr
+                lower_near, lower_far = w_bl, w_br
+
+            dist_upper = math.hypot(upper_near[0] - self.x, upper_near[1] - self.y) + \
+                         math.hypot(upper_far[0] - upper_near[0], upper_far[1] - upper_near[1]) + \
+                         math.hypot(tx - upper_far[0], ty - upper_far[1])
+
+            dist_lower = math.hypot(lower_near[0] - self.x, lower_near[1] - self.y) + \
+                         math.hypot(lower_far[0] - lower_near[0], lower_far[1] - lower_near[1]) + \
+                         math.hypot(tx - lower_far[0], ty - lower_far[1])
+
+            near, far = (upper_near, upper_far) if dist_upper <= dist_lower else (lower_near, lower_far)
+        else:
+            # 수평 벽: 좌측 우회(Left) vs 우측 우회(Right)
+            if self.y >= obs.y:
+                left_near, left_far = w_tl, w_bl
+                right_near, right_far = w_tr, w_br
+            else:
+                left_near, left_far = w_bl, w_tl
+                right_near, right_far = w_br, w_tr
+
+            dist_left = math.hypot(left_near[0] - self.x, left_near[1] - self.y) + \
+                        math.hypot(left_far[0] - left_near[0], left_far[1] - left_near[1]) + \
+                        math.hypot(tx - left_far[0], ty - left_far[1])
+
+            dist_right = math.hypot(right_near[0] - self.x, right_near[1] - self.y) + \
+                         math.hypot(right_far[0] - right_near[0], right_far[1] - right_near[1]) + \
+                         math.hypot(tx - right_far[0], ty - right_far[1])
+
+            near, far = (left_near, left_far) if dist_left <= dist_right else (right_near, right_far)
+
+        # 3. near를 거치지 않고 far로 바로 갈 수 있는지(모서리를 이미 돌았는지) 검사
+        pad = self.radius + 4.0
+        hit_far, _ = segment_intersects_aabb(
+            self.x, self.y, far[0], far[1],
+            obs.left - pad, obs.right + pad,
+            obs.bottom - pad, obs.top + pad
+        )
+        if not hit_far:
+            return far[0], far[1], blocking_obs
+        return near[0], near[1], blocking_obs
+
     def update(self, scaled_dt: float, unscaled_dt: float) -> None:
-        super().update(scaled_dt, unscaled_dt)
+        if self.hit_flash_timer > 0.0:
+            self.hit_flash_timer = max(0.0, self.hit_flash_timer - unscaled_dt)
 
         if self.is_dead:
             return
@@ -861,19 +997,49 @@ class Chaser(Enemy):
         if self.target is None or getattr(self.target, 'is_dead', False):
             return
 
-        to_x = self.target.x - self.x
-        to_y = self.target.y - self.y
-        dist = math.hypot(to_x, to_y)
+        to_p_x = self.target.x - self.x
+        to_p_y = self.target.y - self.y
+        dist_to_player = math.hypot(to_p_x, to_p_y)
+
+        # 내비게이션 목표 지점 산출 (직선 사선 or 장애물 모서리 우회 웨이포인트)
+        nav_x, nav_y, blocking_obs = self.get_navigation_target()
+
+        # 시선 회전: 공격 예비/타격 중에는 플레이어 주시, 이동/추격 중에는 내비게이션 목표 주시
+        if self.chaser_state in (self.STATE_WINDUP, self.STATE_STRIKE):
+            self.update_facing(scaled_dt, self.target.x, self.target.y)
+        else:
+            self.update_facing(scaled_dt, nav_x, nav_y)
+
+        # 귀속된 수리검 위치 동기화
+        for idx, shuriken in enumerate(self.embedded_shurikens):
+            ox, oy = self._embedded_offsets[idx]
+            shuriken.x = self.x + ox
+            shuriken.y = self.y + oy
 
         # FSM 상태 전이
         if self.chaser_state == self.STATE_CHASE:
-            # 플레이어에게 고속 접근 이동
-            if dist > self.radius + getattr(self.target, 'radius', 16.0):
-                self.x += self.dir_x * self.move_speed * scaled_dt
-                self.y += self.dir_y * self.move_speed * scaled_dt
+            # 플레이어 또는 우회 웨이포인트를 향해 이동
+            nav_dx = nav_x - self.x
+            nav_dy = nav_y - self.y
+            nav_dist = math.hypot(nav_dx, nav_dy)
 
-            # 근접 공격 사거리 진입 시 예비 동작(WINDUP) 전이
-            if dist <= config.CHASER_ATTACK_RANGE:
+            if blocking_obs is not None:
+                # 우회 기동 중: 웨이포인트 방향으로 이동
+                if nav_dist > 4.0:
+                    self.x += (nav_dx / nav_dist) * self.move_speed * scaled_dt
+                    self.y += (nav_dy / nav_dist) * self.move_speed * scaled_dt
+            else:
+                # 시야 확보 완료: 플레이어를 향해 접근
+                if dist_to_player > self.radius + getattr(self.target, 'radius', 16.0):
+                    if nav_dist > 1.0:
+                        self.x += (nav_dx / nav_dist) * self.move_speed * scaled_dt
+                        self.y += (nav_dy / nav_dist) * self.move_speed * scaled_dt
+                    else:
+                        self.x += self.dir_x * self.move_speed * scaled_dt
+                        self.y += self.dir_y * self.move_speed * scaled_dt
+
+            # 근접 공격 사거리 진입 시 예비 동작(WINDUP) 전이 (장애물이 가로막지 않은 상태여야 함)
+            if dist_to_player <= config.CHASER_ATTACK_RANGE and blocking_obs is None:
                 self.chaser_state = self.STATE_WINDUP
                 self.state_timer = config.CHASER_WINDUP_DURATION
 
@@ -894,7 +1060,7 @@ class Chaser(Enemy):
             # 플레이어 타격 판정 (1회)
             if not self.attack_hit_done:
                 hit_range = self.radius + getattr(self.target, 'radius', 16.0) + 12.0
-                if dist <= hit_range:
+                if dist_to_player <= hit_range:
                     self.target.take_damage(config.CHASER_ATTACK_DAMAGE)
                     self.attack_hit_done = True
 
@@ -904,11 +1070,21 @@ class Chaser(Enemy):
                 self.state_timer = config.CHASER_ATTACK_COOLDOWN
 
         elif self.chaser_state == self.STATE_COOLDOWN:
-            # 공격 후 쿨다운 중에는 느린 속도(35%)로 접근
+            # 공격 후 쿨다운 중에는 느린 속도(35%)로 내비게이션 목표를 향해 접근
             slow_speed = self.move_speed * 0.35
-            if dist > self.radius + getattr(self.target, 'radius', 16.0) + 8.0:
-                self.x += self.dir_x * slow_speed * scaled_dt
-                self.y += self.dir_y * slow_speed * scaled_dt
+            nav_dx = nav_x - self.x
+            nav_dy = nav_y - self.y
+            nav_dist = math.hypot(nav_dx, nav_dy)
+
+            if blocking_obs is not None:
+                if nav_dist > 4.0:
+                    self.x += (nav_dx / nav_dist) * slow_speed * scaled_dt
+                    self.y += (nav_dy / nav_dist) * slow_speed * scaled_dt
+            else:
+                if dist_to_player > self.radius + getattr(self.target, 'radius', 16.0) + 8.0:
+                    if nav_dist > 1.0:
+                        self.x += (nav_dx / nav_dist) * slow_speed * scaled_dt
+                        self.y += (nav_dy / nav_dist) * slow_speed * scaled_dt
 
             self.state_timer -= scaled_dt
             if self.state_timer <= 0.0:
