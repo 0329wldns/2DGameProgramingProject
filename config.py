@@ -15,6 +15,7 @@ TARGET_FPS: int = 120
 # 2. 플레이어(Player) 기동 및 자원 설정 (PRD 2절, 3.1절)
 # ==========================================
 PLAYER_RADIUS: float = 16.0
+PLAYER_MAX_HP: float = 100.0            # 플레이어 최대 체력
 PLAYER_MOVE_SPEED: float = 460.0        # 기본 8방향 이동 속도 (px/s)
 PLAYER_MAX_AMMO: int = 5                # 최대 수리검 소지 탄창 수 (밸런스 조정 가능)
 
@@ -50,6 +51,19 @@ SHIELDER_RADIUS: float = 24.0           # 거구 탱커 히트박스 반경 (px)
 SHIELDER_MAX_HP: float = 140.0          # 방패병 최대 체력
 SHIELDER_MOVE_SPEED: float = 75.0       # 플레이어 추적 전진 속도 (px/s)
 SHIELDER_TURN_RATE: float = 1.6         # 묵직한 방패 회전 속도 (rad/s)
+
+# 4.2 원거리 저격병(Sniper) 아키타입 설정 (PRD 4절, 5주차)
+SNIPER_RADIUS: float = 18.0             # 저격병 히트박스 반경 (px)
+SNIPER_MAX_HP: float = 60.0             # 저격병 최대 체력 (유리 대포)
+SNIPER_TURN_RATE: float = 1.3           # 조준 회전 속도 (rad/s)
+SNIPER_AIM_DURATION: float = 1.6        # 플레이어 추적 조준 시간 (초)
+SNIPER_LOCK_DURATION: float = 0.25      # 사격 직전 사선 고정 시간 (초, 플레이어 물리 회피 타이밍)
+SNIPER_COOLDOWN: float = 1.6            # 사격 후 재조준 쿨다운 (초)
+SNIPER_BULLET_SPEED: float = 1400.0     # 저격 탄환 비행 속도 (px/s)
+SNIPER_BULLET_RADIUS: float = 5.0       # 탄환 피격 반경 (px)
+SNIPER_BULLET_DAMAGE: float = 20.0      # 플레이어 피격 피해량
+SNIPER_KITE_SPEED: float = 80.0         # 거리 유지 후퇴 속도 (px/s)
+SNIPER_MIN_DISTANCE: float = 400.0      # 최소 안전거리 (이내 진입 시 후퇴)
 
 # ==========================================
 # 5. 불릿타임 및 처치 리셋 설정 (PRD 3.4절)

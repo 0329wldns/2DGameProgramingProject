@@ -407,20 +407,60 @@ class Shielder(Enemy):
         if self.is_dead:
             return
 
-        # 플레이어 추적 이동 (전진 AI)
+        # 플레이어 및 아군 보호 인터셉트 이동 AI
         if self.target is not None and not getattr(self.target, 'is_dead', False):
-            to_x = self.target.x - self.x
-            to_y = self.target.y - self.y
-            dist = math.hypot(to_x, to_y)
-            # 플레이어와 일정 근접 거리 유지 (완전히 겹치지 않도록 정지선 확보)
-            min_stop_dist = self.radius + getattr(self.target, 'radius', 20.0) + 10.0
-            if dist > min_stop_dist:
-                self.x += self.dir_x * self.move_speed * scaled_dt
-                self.y += self.dir_y * self.move_speed * scaled_dt
+            # 1. 보호할 아군(특히 Sniper) 탐색
+            protected_ally = None
+            min_dist_to_ally = float('inf')
 
-                # 화면 경계 이탈 방지
-                self.x = max(self.radius, min(config.CANVAS_WIDTH - self.radius, self.x))
-                self.y = max(self.radius, min(config.CANVAS_HEIGHT - self.radius, self.y))
+            for enemy in game_world.world[game_world.LAYER_ENEMY]:
+                if enemy is self or getattr(enemy, 'is_dead', False) or getattr(enemy, 'hp', 0.0) <= 0.0:
+                    continue
+                # Sniper 아키타입이 있다면 최우선 보호 대상으로 지정
+                if getattr(enemy, 'enemy_type', '') == 'sniper':
+                    protected_ally = enemy
+                    break
+                d = math.hypot(enemy.x - self.x, enemy.y - self.y)
+                if d < min_dist_to_ally:
+                    min_dist_to_ally = d
+                    protected_ally = enemy
+
+            if protected_ally is not None:
+                # === 아군 보호 인터셉트 가드 모드 ===
+                # 플레이어와 아군 사이의 직선 경로 상에서 아군 전방 약 110px 지점을 목표 가드 포인트로 계산
+                to_p_x = self.target.x - protected_ally.x
+                to_p_y = self.target.y - protected_ally.y
+                p_dist = math.hypot(to_p_x, to_p_y)
+
+                if p_dist > 1.0:
+                    dir_to_p_x = to_p_x / p_dist
+                    dir_to_p_y = to_p_y / p_dist
+                    guard_offset = min(110.0, p_dist * 0.45)
+                    goal_x = protected_ally.x + dir_to_p_x * guard_offset
+                    goal_y = protected_ally.y + dir_to_p_y * guard_offset
+                else:
+                    goal_x, goal_y = self.x, self.y
+
+                move_dx = goal_x - self.x
+                move_dy = goal_y - self.y
+                move_dist = math.hypot(move_dx, move_dy)
+
+                if move_dist > 4.0:
+                    self.x += (move_dx / move_dist) * self.move_speed * scaled_dt
+                    self.y += (move_dy / move_dist) * self.move_speed * scaled_dt
+            else:
+                # === 아군이 없을 때: 단독 플레이어 압박 모드 ===
+                to_x = self.target.x - self.x
+                to_y = self.target.y - self.y
+                dist = math.hypot(to_x, to_y)
+                min_stop_dist = self.radius + getattr(self.target, 'radius', 20.0) + 10.0
+                if dist > min_stop_dist:
+                    self.x += self.dir_x * self.move_speed * scaled_dt
+                    self.y += self.dir_y * self.move_speed * scaled_dt
+
+            # 화면 경계 이탈 방지
+            self.x = max(self.radius, min(config.CANVAS_WIDTH - self.radius, self.x))
+            self.y = max(self.radius, min(config.CANVAS_HEIGHT - self.radius, self.y))
 
     def resolve_shuriken_collision(self, shuriken: Any) -> bool:
         """
@@ -526,3 +566,229 @@ class Shielder(Enemy):
 
         # 3. 방패 중앙 보강 코어 리벳
         pico2d.draw_rectangle(p_mid_x - 2, p_mid_y - 2, p_mid_x + 2, p_mid_y + 2, r=255, g=255, b=255, filled=True)
+
+
+class SniperBullet:
+    """
+    원거리 저격병이 발사하는 초고속 저격 탄환 엔티티.
+    - LAYER_PROJECTILE 에 등록되어 직선 비행.
+    - 불릿타임 중에는 scaled_dt에 의해 0.1배속으로 슬로우모션 연출.
+    - 플레이어 피격 시 데미지 부여 (주의: 구르기 무적 없음! 닿으면 무조건 피격).
+    - 장애물(기둥) 또는 화면 외벽 충돌 시 즉시 소멸.
+    """
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        dir_x: float,
+        dir_y: float,
+        speed: float = config.SNIPER_BULLET_SPEED,
+        damage: float = config.SNIPER_BULLET_DAMAGE,
+        radius: float = config.SNIPER_BULLET_RADIUS,
+    ) -> None:
+        self.x: float = x
+        self.y: float = y
+        length = math.hypot(dir_x, dir_y)
+        if length > 0.0:
+            self.dir_x: float = dir_x / length
+            self.dir_y: float = dir_y / length
+        else:
+            self.dir_x = 1.0
+            self.dir_y = 0.0
+
+        self.speed: float = speed
+        self.damage: float = damage
+        self.radius: float = radius
+        self.is_active: bool = True
+
+    def update(self, scaled_dt: float, unscaled_dt: float) -> None:
+        if not self.is_active:
+            return
+
+        self.x += self.dir_x * self.speed * scaled_dt
+        self.y += self.dir_y * self.speed * scaled_dt
+
+        # 화면 외곽 충돌 시 소멸
+        if (
+            self.x < -30.0
+            or self.x > config.CANVAS_WIDTH + 30.0
+            or self.y < -30.0
+            or self.y > config.CANVAS_HEIGHT + 30.0
+        ):
+            self.destroy()
+
+    def destroy(self) -> None:
+        if self.is_active:
+            self.is_active = False
+            game_world.remove_object(self)
+
+    def draw(self) -> None:
+        if not self.is_active:
+            return
+        ix = int(self.x)
+        iy = int(self.y)
+        ir = int(self.radius)
+
+        # 고속 붉은색 예광탄(Tracer) 시각화 (진홍색 헤드 + 주황 잔상 꼬리선)
+        tail_len = 28.0
+        tail_x = int(self.x - self.dir_x * tail_len)
+        tail_y = int(self.y - self.dir_y * tail_len)
+
+        # 꼬리 잔상선
+        pico2d.draw_line(tail_x, tail_y, ix, iy, r=255, g=60, b=40)
+        pico2d.draw_line(tail_x, tail_y + 1, ix, iy + 1, r=255, g=120, b=50)
+        pico2d.draw_line(tail_x, tail_y - 1, ix, iy - 1, r=255, g=120, b=50)
+
+        # 탄두 발광 코어
+        pico2d.draw_rectangle(ix - ir, iy - ir, ix + ir, iy + ir, r=255, g=30, b=30, filled=True)
+        pico2d.draw_rectangle(ix - 2, iy - 2, ix + 2, iy + 2, r=255, g=255, b=200, filled=True)
+
+
+class Sniper(Enemy):
+    """
+    원거리 저격병 (Sniper) 아키타입 클래스 (PRD 4절, 5주차).
+    - 후방 화력 지원형 유리 대포(Glass Cannon) 몬스터 (낮은 체력 60 HP).
+    - 플레이어를 향해 붉은색 조준 레이저를 충전(Aiming)합니다.
+    - 발사 직전 사선을 고정(Locked Telegraph)하여 플레이어에게 물리 공간 회피(WASD / 구르기 가속) 기회를 제공합니다.
+    - 고정 시간 만료 시 고속 저격 탄환(SniperBullet)을 발사합니다.
+    - 플레이어가 너무 가까이 접근하면 거리를 벌리며 후퇴(Kiting)합니다.
+    """
+    STATE_COOLDOWN: int = 0  # 사격 후 쿨다운 대기
+    STATE_AIMING: int   = 1  # 레이저로 플레이어 추적 조준 중
+    STATE_LOCKED: int   = 2  # 사격 직전 사선 고정 (붉은 레이저 강렬 발광)
+
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        dir_x: float = -1.0,
+        dir_y: float = 0.0,
+        target: Any = None,
+        max_hp: float = config.SNIPER_MAX_HP,
+    ) -> None:
+        super().__init__(x=x, y=y, dir_x=dir_x, dir_y=dir_y, target=target, max_hp=max_hp)
+        self.radius: float = config.SNIPER_RADIUS
+        self.turn_rate: float = config.SNIPER_TURN_RATE
+        self.enemy_type: str = "sniper"
+
+        # FSM 상태 및 타이머
+        self.sniper_state: int = self.STATE_COOLDOWN
+        self.state_timer: float = 0.8  # 전투 시작 후 0.8초 뒤 첫 조준 시작
+        self.locked_dir_x: float = self.dir_x
+        self.locked_dir_y: float = self.dir_y
+        self.muzzle_flash_timer: float = 0.0
+
+    def update(self, scaled_dt: float, unscaled_dt: float) -> None:
+        if self.muzzle_flash_timer > 0.0:
+            self.muzzle_flash_timer = max(0.0, self.muzzle_flash_timer - unscaled_dt)
+
+        # STATE_LOCKED 상태에서는 플레이어를 향해 시선을 돌리지 않음
+        if self.sniper_state == self.STATE_LOCKED:
+            if self.hit_flash_timer > 0.0:
+                self.hit_flash_timer = max(0.0, self.hit_flash_timer - unscaled_dt)
+            for idx, shuriken in enumerate(self.embedded_shurikens):
+                ox, oy = self._embedded_offsets[idx]
+                shuriken.x = self.x + ox
+                shuriken.y = self.y + oy
+        else:
+            super().update(scaled_dt, unscaled_dt)
+
+        if self.is_dead:
+            return
+
+        # 플레이어와의 거리 계산 및 후퇴(Kiting) 기동
+        if self.target is not None and not getattr(self.target, 'is_dead', False):
+            to_x = self.target.x - self.x
+            to_y = self.target.y - self.y
+            dist = math.hypot(to_x, to_y)
+
+            # 플레이어가 최소 안전거리 이내로 접근하면 반대 방향으로 후퇴
+            if dist < config.SNIPER_MIN_DISTANCE and dist > 1.0:
+                away_x = -to_x / dist
+                away_y = -to_y / dist
+                self.x += away_x * config.SNIPER_KITE_SPEED * scaled_dt
+                self.y += away_y * config.SNIPER_KITE_SPEED * scaled_dt
+
+                self.x = max(self.radius, min(config.CANVAS_WIDTH - self.radius, self.x))
+                self.y = max(self.radius, min(config.CANVAS_HEIGHT - self.radius, self.y))
+
+            # FSM 상태 전이
+            if self.sniper_state == self.STATE_COOLDOWN:
+                self.state_timer -= scaled_dt
+                if self.state_timer <= 0.0:
+                    self.sniper_state = self.STATE_AIMING
+                    self.state_timer = config.SNIPER_AIM_DURATION
+
+            elif self.sniper_state == self.STATE_AIMING:
+                self.state_timer -= scaled_dt
+                if self.state_timer <= 0.0:
+                    # 사선 고정 상태로 전이: 현재 시선 방향을 사격 방향으로 Lock-on
+                    self.sniper_state = self.STATE_LOCKED
+                    self.state_timer = config.SNIPER_LOCK_DURATION
+                    self.locked_dir_x = self.dir_x
+                    self.locked_dir_y = self.dir_y
+
+            elif self.sniper_state == self.STATE_LOCKED:
+                self.state_timer -= scaled_dt
+                self.dir_x = self.locked_dir_x
+                self.dir_y = self.locked_dir_y
+
+                if self.state_timer <= 0.0:
+                    # 발사 (FIRE!)
+                    self.fire()
+                    self.sniper_state = self.STATE_COOLDOWN
+                    self.state_timer = config.SNIPER_COOLDOWN
+
+    def fire(self) -> None:
+        """총구에서 초고속 저격 탄환(SniperBullet) 생성 및 월드 등록"""
+        muzzle_dist = self.radius + 8.0
+        spawn_x = self.x + self.dir_x * muzzle_dist
+        spawn_y = self.y + self.dir_y * muzzle_dist
+
+        bullet = SniperBullet(
+            x=spawn_x,
+            y=spawn_y,
+            dir_x=self.dir_x,
+            dir_y=self.dir_y,
+        )
+        game_world.add_object(bullet, game_world.LAYER_PROJECTILE)
+
+        self.muzzle_flash_timer = 0.12
+        game_framework.start_screen_shake(5.0, 0.08)
+
+    def draw(self) -> None:
+        super().draw()
+
+        if self.is_dead:
+            return
+
+        ix = int(self.x)
+        iy = int(self.y)
+
+        # 1. 롱 배럴 스나이퍼 총신(Rifle Barrel) 시각화
+        barrel_len = self.radius + 14.0
+        bx = int(self.x + self.dir_x * barrel_len)
+        by = int(self.y + self.dir_y * barrel_len)
+        pico2d.draw_line(ix, iy, bx, by, r=220, g=50, b=50)
+        pico2d.draw_line(ix, iy + 1, bx, by + 1, r=255, g=80, b=80)
+
+        # 2. 붉은색 조준 레이저(Laser Telegraph) 렌더링
+        laser_len = 1800.0
+        lx = int(self.x + self.dir_x * laser_len)
+        ly = int(self.y + self.dir_y * laser_len)
+
+        if self.sniper_state == self.STATE_AIMING:
+            # 충전 진행도(0.0 ~ 1.0)에 따라 선명해지는 점선/실선 레이저
+            progress = max(0.0, min(1.0, 1.0 - (self.state_timer / config.SNIPER_AIM_DURATION)))
+            alpha_r = int(90 + 165 * progress)
+            pico2d.draw_line(bx, by, lx, ly, r=alpha_r, g=30, b=30)
+
+        elif self.sniper_state == self.STATE_LOCKED:
+            # 사선 고정 상태: 매우 굵고 밝게 빛나는 위험 경고 레이저 (Bright Crimson Glow)
+            pico2d.draw_line(bx, by, lx, ly, r=255, g=30, b=30)
+            pico2d.draw_line(bx, by + 1, lx, ly + 1, r=255, g=100, b=100)
+            pico2d.draw_line(bx, by - 1, lx, ly - 1, r=255, g=100, b=100)
+
+        # 3. 총구 섬광 (Muzzle Flash)
+        if self.muzzle_flash_timer > 0.0:
+            pico2d.draw_rectangle(bx - 4, by - 4, bx + 4, by + 4, r=255, g=255, b=120, filled=True)

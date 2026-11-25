@@ -11,7 +11,7 @@ import game_world
 from entities.player import Player, STATE_BULLET_TIME
 from entities.obstacle import Obstacle
 from entities.shuriken import Shuriken
-from entities.enemy import Enemy, Shielder
+from entities.enemy import Enemy, Shielder, Sniper, SniperBullet
 from ui.cursor import Cursor
 from ui.trajectory import TrajectoryGuide
 import config
@@ -65,25 +65,31 @@ def init() -> None:
         game_world.add_object(s, game_world.LAYER_ENEMY)
         return s
 
+    def spawn_sniper(x: float, y: float, dir_x: float = -1.0, dir_y: float = 0.0) -> Sniper:
+        s = Sniper(x=x, y=y, dir_x=dir_x, dir_y=dir_y, target=player)
+        enemies.append(s)
+        game_world.add_object(s, game_world.LAYER_ENEMY)
+        return s
+
     # 1. 전술적 반사용 기둥(장애물) 배치
     spawn_obstacle(x=750.0, y=540.0, w=80.0, h=340.0)   # 중앙 좌측 기둥 (적 전방 엄폐)
     spawn_obstacle(x=1450.0, y=540.0, w=80.0, h=240.0)  # 중앙 우측 기둥 (외곽 반사 지원)
 
-    # 2. 연쇄 돌진(Chain Dash) 콤보 테스트용 적 배치 (이동거리 400px 최적화)
-    # [적 1] 기둥 뒤 메인 타겟: 전방 가드 방패병(Shielder) -> 외벽/기둥 배후 반사타격으로 처형 시동 (HP 140)
-    spawn_shielder(x=950.0, y=540.0, dir_x=-1.0, dir_y=0.0)
+    # 2. 전술 포메이션 적 배치 (방패병 전위 엄폐 + 저격병 후방 화력 지원 + 연쇄 돌진 징검다리)
+    # [적 1] 전위 탱커 방패병(Shielder): 저격병 앞을 가로막으며 가드 (HP 140)
+    spawn_shielder(x=1000.0, y=540.0, dir_x=-1.0, dir_y=0.0)
 
-    # [적 2] 1차 관통 궤적 테스트: 적 1 처형 돌진 경로상에서 휩쓸려 사망 (HP 50)
-    spawn_enemy(x=1100.0, y=540.0, hp=50.0, dir_x=-1.0, dir_y=0.0)
+    # [적 2] 후방 화력 저격병(Sniper): 붉은 조준선 차지 후 저격 탄환 발사 (HP 60)
+    spawn_sniper(x=1500.0, y=540.0, dir_x=-1.0, dir_y=0.0)
 
-    # [적 3] 2차 연쇄 돌진 (우상단 징검다리, HP 50)
-    spawn_enemy(x=1300.0, y=780.0, hp=50.0, dir_x=-1.0, dir_y=-0.5)
+    # [적 3] 2차 연쇄 돌진용 상단 징검다리 (HP 50)
+    spawn_enemy(x=1200.0, y=780.0, hp=50.0, dir_x=-1.0, dir_y=-0.5)
 
-    # [적 4] 3차 연쇄 돌진 (우측 외곽 징검다리, HP 50)
-    spawn_enemy(x=1650.0, y=540.0, hp=50.0, dir_x=-1.0, dir_y=0.0)
+    # [적 4] 3차 연쇄 돌진용 우측 외곽 징검다리 (HP 50)
+    spawn_enemy(x=1700.0, y=540.0, hp=50.0, dir_x=-1.0, dir_y=0.0)
 
-    # [적 5] 4차 연쇄 돌진 (우하단 징검다리, HP 50)
-    spawn_enemy(x=1300.0, y=300.0, hp=50.0, dir_x=-1.0, dir_y=0.5)
+    # [적 5] 4차 연쇄 돌진용 하단 징검다리 (HP 50)
+    spawn_enemy(x=1200.0, y=300.0, hp=50.0, dir_x=-1.0, dir_y=0.5)
 
 
 def finish() -> None:
@@ -178,15 +184,34 @@ def update(scaled_dt: float, unscaled_dt: float) -> None:
             if not enemy.is_dead:
                 obs.resolve_entity_collision(enemy)
 
-    # 3. 수리검 vs 장애물 반사 및 적 피격 충돌 판정
-    shurikens = game_world.world[game_world.LAYER_PROJECTILE]
-    for obj in list(shurikens):
+    # 3. 투사체(수리검 및 저격 탄환) vs 장애물/플레이어/적 충돌 판정
+    projectiles = game_world.world[game_world.LAYER_PROJECTILE]
+    for obj in list(projectiles):
         if isinstance(obj, Shuriken):
             for obs in obstacles:
                 obs.resolve_shuriken_collision(obj)
             for enemy in enemies:
                 if enemy.resolve_shuriken_collision(obj):
                     break
+        elif isinstance(obj, SniperBullet):
+            # 저격 탄환 vs 장애물(기둥) 충돌 시 소멸
+            hit_obs = False
+            for obs in obstacles:
+                closest_x = max(obs.left, min(obj.x, obs.right))
+                closest_y = max(obs.bottom, min(obj.y, obs.top))
+                if math.hypot(obj.x - closest_x, obj.y - closest_y) < obj.radius:
+                    obj.destroy()
+                    hit_obs = True
+                    break
+            if hit_obs:
+                continue
+
+            # 저격 탄환 vs 플레이어 피격 충돌 (주의: 구르기 무적 없음! 닿으면 무조건 데미지)
+            if player:
+                p_dist = math.hypot(obj.x - player.x, obj.y - player.y)
+                if p_dist < obj.radius + player.radius:
+                    player.take_damage(obj.damage)
+                    obj.destroy()
 
 
 def _draw_bullet_time_hud(p: Player) -> None:

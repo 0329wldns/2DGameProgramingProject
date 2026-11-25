@@ -33,6 +33,11 @@ class Player:
         self.radius: float = config.PLAYER_RADIUS
         self.move_speed: float = config.PLAYER_MOVE_SPEED
 
+        # 플레이어 체력 및 피격 파라미터
+        self.max_hp: float = config.PLAYER_MAX_HP
+        self.hp: float = self.max_hp
+        self.damage_flash_timer: float = 0.0
+
         # 플레이어 FSM 상태
         self.state: int = STATE_NORMAL
 
@@ -440,8 +445,22 @@ class Player:
         self.x = max(self.radius, min(config.CANVAS_WIDTH - self.radius, self.x))
         self.y = max(self.radius, min(config.CANVAS_HEIGHT - self.radius, self.y))
 
+    def take_damage(self, amount: float) -> None:
+        """
+        플레이어 피격 데미지 처리.
+        - 주의(기획 규칙): 구르기(STATE_ROLL) 상태라도 I-Frame(무적)이 없으므로 회피 불가, 그대로 피해를 입음!
+        - 순간 카메라 진동 및 피격 섬광 활성화
+        """
+        self.hp = max(0.0, self.hp - amount)
+        self.damage_flash_timer = 0.15
+        game_framework.start_screen_shake(8.0, 0.12)
+
     def update(self, scaled_dt: float, unscaled_dt: float) -> None:
         """프레임 업데이트 (FSM 상태별 처리 및 쿨다운/잔상 차감)"""
+        # 피격 섬광 타이머 차감
+        if self.damage_flash_timer > 0.0:
+            self.damage_flash_timer = max(0.0, self.damage_flash_timer - unscaled_dt)
+
         # 잔상 타이머 갱신 (unscaled_dt 기준 감쇄)
         for img in self.afterimages:
             img[2] -= unscaled_dt
@@ -496,7 +515,7 @@ class Player:
             pico2d.draw_line(tail_x, tail_y + 1, int(self.x), int(self.y) + 1, r=0, g=255, b=255)
             pico2d.draw_line(tail_x, tail_y - 1, int(self.x), int(self.y) - 1, r=0, g=255, b=255)
 
-        # 3. 구르기 상태 시 순간 축소 피드백
+        # 3. 본체 렌더링 (피격 섬광 및 구르기 축소 피드백)
         rx = self.radius * 0.7 if self.state == STATE_ROLL else self.radius
         ry = self.radius * 0.7 if self.state == STATE_ROLL else self.radius
 
@@ -504,9 +523,24 @@ class Player:
         bottom = int(self.y - ry)
         right = int(self.x + rx)
         top = int(self.y + ry)
-        pico2d.draw_rectangle(left, bottom, right, top, r=0, g=255, b=255)
 
-        # 4. 잔여 탄창 시각화 (청록색 네온 탄창 도트)
+        if self.damage_flash_timer > 0.0:
+            pico2d.draw_rectangle(left - 2, bottom - 2, right + 2, top + 2, r=255, g=60, b=60, filled=True)
+            pico2d.draw_rectangle(left, bottom, right, top, r=255, g=255, b=255)
+        else:
+            pico2d.draw_rectangle(left, bottom, right, top, r=0, g=255, b=255)
+
+        # 4. 플레이어 체력바 (본체 하단 표시)
+        hp_bar_w = 36.0
+        hp_bar_h = 4.0
+        hp_bar_left = int(self.x - hp_bar_w / 2.0)
+        hp_bar_bottom = int(self.y - self.radius - 8.0)
+        pico2d.draw_rectangle(hp_bar_left, hp_bar_bottom, int(hp_bar_left + hp_bar_w), int(hp_bar_bottom + hp_bar_h), r=70, g=20, b=20)
+        hp_ratio = max(0.0, min(1.0, self.hp / self.max_hp))
+        if hp_ratio > 0.0:
+            pico2d.draw_rectangle(hp_bar_left, hp_bar_bottom, int(hp_bar_left + hp_bar_w * hp_ratio), int(hp_bar_bottom + hp_bar_h), r=0, g=230, b=120, filled=True)
+
+        # 5. 잔여 탄창 시각화 (청록색 네온 탄창 도트)
         spacing = 11.0
         total_span = (self.max_ammo - 1) * spacing if self.max_ammo > 1 else 0.0
         start_x = self.x - total_span / 2.0
