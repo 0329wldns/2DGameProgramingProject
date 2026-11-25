@@ -818,3 +818,141 @@ class Sniper(Enemy):
         # 3. 총구 섬광 (Muzzle Flash)
         if self.muzzle_flash_timer > 0.0:
             pico2d.draw_rectangle(bx - 4, by - 4, bx + 4, by + 4, r=255, g=255, b=120, filled=True)
+
+
+class Chaser(Enemy):
+    """
+    근접 추격병 (Chaser) 아키타입 클래스 (PRD 4절, 5주차).
+    - 플레이어에게 고속으로 접근하여 근접 발톱 공격을 가하는 기동형 몬스터.
+    - 낮은 체력 (50 HP): 정면 수리검 1발(10) + 돌진(40) = 50으로 단 1발 적중 시 즉시 일격 처형 킬각 활성화!
+    - 불릿타임 연쇄 돌진(Chain Dash)의 훌륭한 징검다리(Stepping Stone) 역할을 수행함.
+    - 근접 거리 도달 시 0.22초간 공격 예비 전조(Windup) 후 15 피해의 근접 할퀴기 공격.
+    """
+    STATE_CHASE: int    = 0  # 플레이어 고속 추격
+    STATE_WINDUP: int   = 1  # 근접 공격 전조 예비 동작 (발톱 발광)
+    STATE_STRIKE: int   = 2  # 공격 돌격 및 타격
+    STATE_COOLDOWN: int = 3  # 공격 후 쿨다운 대기
+
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        dir_x: float = -1.0,
+        dir_y: float = 0.0,
+        target: Any = None,
+        max_hp: float = config.CHASER_MAX_HP,
+    ) -> None:
+        super().__init__(x=x, y=y, dir_x=dir_x, dir_y=dir_y, target=target, max_hp=max_hp)
+        self.radius: float = config.CHASER_RADIUS
+        self.move_speed: float = config.CHASER_MOVE_SPEED
+        self.turn_rate: float = config.CHASER_TURN_RATE
+        self.enemy_type: str = "chaser"
+
+        self.chaser_state: int = self.STATE_CHASE
+        self.state_timer: float = 0.0
+        self.attack_hit_done: bool = False
+
+    def update(self, scaled_dt: float, unscaled_dt: float) -> None:
+        super().update(scaled_dt, unscaled_dt)
+
+        if self.is_dead:
+            return
+
+        if self.target is None or getattr(self.target, 'is_dead', False):
+            return
+
+        to_x = self.target.x - self.x
+        to_y = self.target.y - self.y
+        dist = math.hypot(to_x, to_y)
+
+        # FSM 상태 전이
+        if self.chaser_state == self.STATE_CHASE:
+            # 플레이어에게 고속 접근 이동
+            if dist > self.radius + getattr(self.target, 'radius', 16.0):
+                self.x += self.dir_x * self.move_speed * scaled_dt
+                self.y += self.dir_y * self.move_speed * scaled_dt
+
+            # 근접 공격 사거리 진입 시 예비 동작(WINDUP) 전이
+            if dist <= config.CHASER_ATTACK_RANGE:
+                self.chaser_state = self.STATE_WINDUP
+                self.state_timer = config.CHASER_WINDUP_DURATION
+
+        elif self.chaser_state == self.STATE_WINDUP:
+            # 0.22초간 공격 전조 (이동 멈춤, 시선은 플레이어 주시)
+            self.state_timer -= scaled_dt
+            if self.state_timer <= 0.0:
+                self.chaser_state = self.STATE_STRIKE
+                self.state_timer = config.CHASER_ATTACK_DURATION
+                self.attack_hit_done = False
+
+        elif self.chaser_state == self.STATE_STRIKE:
+            # 공격 돌격 (전방으로 짧게 도약)
+            lunge_speed = self.move_speed * 1.4
+            self.x += self.dir_x * lunge_speed * scaled_dt
+            self.y += self.dir_y * lunge_speed * scaled_dt
+
+            # 플레이어 타격 판정 (1회)
+            if not self.attack_hit_done:
+                hit_range = self.radius + getattr(self.target, 'radius', 16.0) + 12.0
+                if dist <= hit_range:
+                    self.target.take_damage(config.CHASER_ATTACK_DAMAGE)
+                    self.attack_hit_done = True
+
+            self.state_timer -= scaled_dt
+            if self.state_timer <= 0.0:
+                self.chaser_state = self.STATE_COOLDOWN
+                self.state_timer = config.CHASER_ATTACK_COOLDOWN
+
+        elif self.chaser_state == self.STATE_COOLDOWN:
+            # 공격 후 쿨다운 중에는 느린 속도(35%)로 접근
+            slow_speed = self.move_speed * 0.35
+            if dist > self.radius + getattr(self.target, 'radius', 16.0) + 8.0:
+                self.x += self.dir_x * slow_speed * scaled_dt
+                self.y += self.dir_y * slow_speed * scaled_dt
+
+            self.state_timer -= scaled_dt
+            if self.state_timer <= 0.0:
+                self.chaser_state = self.STATE_CHASE
+
+        # 화면 외곽 경계 클램핑
+        self.x = max(self.radius, min(config.CANVAS_WIDTH - self.radius, self.x))
+        self.y = max(self.radius, min(config.CANVAS_HEIGHT - self.radius, self.y))
+
+    def draw(self) -> None:
+        super().draw()
+
+        if self.is_dead:
+            return
+
+        ix = int(self.x)
+        iy = int(self.y)
+
+        # 전방 쐐기형 공격 발톱(Claws / Blades) 시각화
+        tx = -self.dir_y
+        ty = self.dir_x
+        claw_len = self.radius + 8.0
+        claw_span = self.radius * 0.75
+
+        # 좌/우 발톱 끝단
+        c1_x = int(self.x + self.dir_x * claw_len - tx * claw_span)
+        c1_y = int(self.y + self.dir_y * claw_len - ty * claw_span)
+        c2_x = int(self.x + self.dir_x * claw_len + tx * claw_span)
+        c2_y = int(self.y + self.dir_y * claw_len + ty * claw_span)
+
+        if self.chaser_state == self.STATE_WINDUP:
+            # 공격 예비 동작: 발톱이 번쩍이는 황금/노란색 경고 발광
+            cr, cg, cb = 255, 230, 40
+            pico2d.draw_rectangle(c1_x - 3, c1_y - 3, c1_x + 3, c1_y + 3, r=cr, g=cg, b=cb, filled=True)
+            pico2d.draw_rectangle(c2_x - 3, c2_y - 3, c2_x + 3, c2_y + 3, r=cr, g=cg, b=cb, filled=True)
+        elif self.chaser_state == self.STATE_STRIKE:
+            # 타격 순간: 진홍색 참격 궤적
+            cr, cg, cb = 255, 50, 50
+            pico2d.draw_line(c1_x, c1_y, c2_x, c2_y, r=255, g=100, b=100)
+            pico2d.draw_line(c1_x, c1_y, int(self.x + self.dir_x * (claw_len + 10.0)), int(self.y + self.dir_y * (claw_len + 10.0)), r=255, g=50, b=50)
+            pico2d.draw_line(c2_x, c2_y, int(self.x + self.dir_x * (claw_len + 10.0)), int(self.y + self.dir_y * (claw_len + 10.0)), r=255, g=50, b=50)
+        else:
+            cr, cg, cb = 240, 120, 30
+
+        # 기본 발톱 라인
+        pico2d.draw_line(ix, iy, c1_x, c1_y, r=cr, g=cg, b=cb)
+        pico2d.draw_line(ix, iy, c2_x, c2_y, r=cr, g=cg, b=cb)

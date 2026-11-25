@@ -11,7 +11,7 @@ import game_world
 from entities.player import Player, STATE_BULLET_TIME, STATE_DASH
 from entities.obstacle import Obstacle
 from entities.shuriken import Shuriken
-from entities.enemy import Enemy, Shielder, Sniper, SniperBullet
+from entities.enemy import Enemy, Shielder, Sniper, SniperBullet, Chaser
 from ui.cursor import Cursor
 from ui.trajectory import TrajectoryGuide
 import config
@@ -65,6 +65,12 @@ def init() -> None:
         game_world.add_object(s, game_world.LAYER_ENEMY)
         return s
 
+    def spawn_chaser(x: float, y: float, dir_x: float = -1.0, dir_y: float = 0.0) -> Chaser:
+        c = Chaser(x=x, y=y, dir_x=dir_x, dir_y=dir_y, target=player)
+        enemies.append(c)
+        game_world.add_object(c, game_world.LAYER_ENEMY)
+        return c
+
     # 1. 전술적 반사용 기둥(장애물) 배치
     # - 중앙 엄폐 기둥: 직사 사선을 차단하여 상하 외벽 반사를 유도하고 저격 레이저를 엄폐
     spawn_obstacle(x=720.0, y=540.0, w=80.0, h=320.0)
@@ -73,14 +79,17 @@ def init() -> None:
     # - 하단 전술 반사 기둥: 바닥 및 하단 외벽 도탄 궤적으로 배후 침투 유도
     spawn_obstacle(x=1260.0, y=280.0, w=180.0, h=60.0)
 
-    # 2. 구현된 적(방패병 & 저격병) 2개 조 전술 포메이션 배치 (더미 적 완전 제거)
-    # [상단 조] 전위 방패병 + 후방 저격병
-    spawn_shielder(x=1040.0, y=680.0, dir_x=-1.0, dir_y=0.0)
-    spawn_sniper(x=1520.0, y=780.0, dir_x=-1.0, dir_y=0.0)
+    # 2. 적 3종(추격병·방패병·저격병) 전술 포메이션 배치
+    # [전위 기동대] 고속 돌격 추격병(Chaser) 2기: 플레이어에게 고속 접근 및 불릿타임 시동 징검다리 (HP 50)
+    spawn_chaser(x=920.0, y=700.0, dir_x=-1.0, dir_y=0.0)
+    spawn_chaser(x=920.0, y=380.0, dir_x=-1.0, dir_y=0.0)
 
-    # [하단 조] 전위 방패병 + 후방 저격병
-    spawn_shielder(x=1040.0, y=400.0, dir_x=-1.0, dir_y=0.0)
-    spawn_sniper(x=1520.0, y=300.0, dir_x=-1.0, dir_y=0.0)
+    # [중앙 방어선] 전위 탱커 방패병(Shielder): 저격병 앞 사선을 가로막으며 가드 (HP 140)
+    spawn_shielder(x=1160.0, y=540.0, dir_x=-1.0, dir_y=0.0)
+
+    # [후방 지원대] 후방 화력 저격병(Sniper) 2기: 붉은 조준 레이저 충전 사격 (HP 60)
+    spawn_sniper(x=1600.0, y=750.0, dir_x=-1.0, dir_y=0.0)
+    spawn_sniper(x=1600.0, y=330.0, dir_x=-1.0, dir_y=0.0)
 
 
 def finish() -> None:

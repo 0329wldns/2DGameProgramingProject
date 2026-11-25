@@ -65,6 +65,17 @@ SNIPER_BULLET_DAMAGE: float = 20.0      # 플레이어 피격 피해량
 SNIPER_KITE_SPEED: float = 80.0         # 거리 유지 후퇴 속도 (px/s)
 SNIPER_MIN_DISTANCE: float = 400.0      # 최소 안전거리 (이내 진입 시 후퇴)
 
+# 4.3 근접 추격병(Chaser) 아키타입 설정 (PRD 4절, 5주차)
+CHASER_RADIUS: float = 16.0             # 날렵한 근접 몬스터 반경 (px)
+CHASER_MAX_HP: float = 50.0             # 낮은 체력 (정면 수리검 1발 10 + 돌진 40으로 일격 처형 킬각)
+CHASER_MOVE_SPEED: float = 340.0        # 고속 접근 이동 속도 (px/s)
+CHASER_TURN_RATE: float = 4.5           # 민첩한 방향 전환 회전 속도 (rad/s)
+CHASER_ATTACK_RANGE: float = 36.0       # 근접 공격 개시 사거리 (px)
+CHASER_WINDUP_DURATION: float = 0.22    # 공격 예비 전조 시간 (초)
+CHASER_ATTACK_DURATION: float = 0.12    # 공격 휘두르기 타격 지속 시간 (초)
+CHASER_ATTACK_COOLDOWN: float = 1.0     # 공격 후 쿨다운 대기시간 (초)
+CHASER_ATTACK_DAMAGE: float = 15.0      # 근접 타격 피해량
+
 # ==========================================
 # 5. 불릿타임 및 처치 리셋 설정 (PRD 3.4절)
 # ==========================================
